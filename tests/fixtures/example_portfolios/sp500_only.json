@@ -1,0 +1,14 @@
+{
+    "name": "S&P 500",
+    "base_currency": "USD",
+    "allocations": [
+        {
+            "ticker": "SPY",
+            "name": "SPDR S&P 500 ETF Trust",
+            "asset_type": "etf",
+            "currency": "USD",
+            "ter": 0.0009,
+            "weight": 1.0
+        }
+    ]
+}

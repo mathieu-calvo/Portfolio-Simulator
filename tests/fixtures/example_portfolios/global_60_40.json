@@ -1,0 +1,22 @@
+{
+    "name": "Global 60/40",
+    "base_currency": "USD",
+    "allocations": [
+        {
+            "ticker": "VTI",
+            "name": "Vanguard Total Stock Market ETF",
+            "asset_type": "etf",
+            "currency": "USD",
+            "ter": 0.0003,
+            "weight": 0.60
+        },
+        {
+            "ticker": "BND",
+            "name": "Vanguard Total Bond Market ETF",
+            "asset_type": "etf",
+            "currency": "USD",
+            "ter": 0.0003,
+            "weight": 0.40
+        }
+    ]
+}
