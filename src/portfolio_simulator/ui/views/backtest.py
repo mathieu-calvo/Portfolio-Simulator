@@ -145,27 +145,27 @@ def render() -> None:
         with tab1:
             st.plotly_chart(
                 portfolio_evolution_chart([result]),
-                use_container_width=True,
+                width="stretch",
             )
         with tab2:
             st.plotly_chart(
                 drawdown_chart([result]),
-                use_container_width=True,
+                width="stretch",
             )
         with tab3:
             m_ret = monthly_returns(result.portfolio_value)
             st.plotly_chart(
                 monthly_returns_histogram(m_ret),
-                use_container_width=True,
+                width="stretch",
             )
         with tab4:
             m_ret = monthly_returns(result.portfolio_value)
             st.plotly_chart(
                 returns_heatmap(m_ret),
-                use_container_width=True,
+                width="stretch",
             )
         with tab5:
             st.plotly_chart(
                 rolling_volatility_chart([result]),
-                use_container_width=True,
+                width="stretch",
             )

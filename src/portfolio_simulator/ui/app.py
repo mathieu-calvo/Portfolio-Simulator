@@ -18,16 +18,16 @@ def main() -> None:
     )
 
     if page == "Portfolio Builder":
-        from portfolio_simulator.ui.pages.portfolio_builder import render
+        from portfolio_simulator.ui.views.portfolio_builder import render
         render()
     elif page == "Backtest":
-        from portfolio_simulator.ui.pages.backtest import render
+        from portfolio_simulator.ui.views.backtest import render
         render()
     elif page == "Comparison":
-        from portfolio_simulator.ui.pages.comparison import render
+        from portfolio_simulator.ui.views.comparison import render
         render()
     elif page == "Optimizer":
-        from portfolio_simulator.ui.pages.optimizer import render
+        from portfolio_simulator.ui.views.optimizer import render
         render()
 
 

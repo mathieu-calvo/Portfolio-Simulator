@@ -15,7 +15,7 @@ def summary_stats_table(results: list[BacktestResult]) -> pd.DataFrame:
 
     Returns a DataFrame with percentage-formatted values.
     """
-    df = comparison_table(results)
+    df = comparison_table(results).astype(object)
 
     # Format percentages
     pct_rows = [

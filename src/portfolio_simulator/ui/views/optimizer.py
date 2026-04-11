@@ -68,7 +68,7 @@ def render() -> None:
             result = st.session_state.frontier_result
             from portfolio_simulator.visualization.charts import efficient_frontier_chart
 
-            st.plotly_chart(efficient_frontier_chart(result), use_container_width=True)
+            st.plotly_chart(efficient_frontier_chart(result), width="stretch")
 
             col1, col2 = st.columns(2)
             with col1:
@@ -130,7 +130,7 @@ def render() -> None:
             mc_result = st.session_state.mc_result
             from portfolio_simulator.visualization.charts import monte_carlo_chart
 
-            st.plotly_chart(monte_carlo_chart(mc_result), use_container_width=True)
+            st.plotly_chart(monte_carlo_chart(mc_result), width="stretch")
 
             col1, col2, col3, col4, col5 = st.columns(5)
             final = mc_result.all_scenarios.iloc[-1]

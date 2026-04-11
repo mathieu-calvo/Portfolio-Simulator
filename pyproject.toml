@@ -18,6 +18,7 @@ dependencies = [
     "streamlit>=1.30",
     "pyarrow>=14.0",
     "exchange-calendars>=4.0",
+    "streamlit-searchbox>=0.1",
 ]
 
 [project.optional-dependencies]

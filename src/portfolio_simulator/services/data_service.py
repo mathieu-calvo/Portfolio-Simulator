@@ -74,7 +74,9 @@ class DataService:
         # Check caches first
         for ticker in tickers:
             key = self._cache_key("price", ticker, start, end)
-            cached = self._memory.get(key) or self._sqlite.get(key)
+            cached = self._memory.get(key)
+            if cached is None:
+                cached = self._sqlite.get(key)
             if cached is not None:
                 results[ticker] = cached
                 self._memory.put(key, cached)
@@ -113,7 +115,9 @@ class DataService:
             return pd.Series(1.0, index=idx, name=f"{base}{quote}")
 
         key = self._cache_key("fx", f"{base}{quote}", start, end)
-        cached = self._memory.get(key) or self._sqlite.get(key)
+        cached = self._memory.get(key)
+        if cached is None:
+            cached = self._sqlite.get(key)
         if cached is not None:
             self._memory.put(key, cached)
             return cached

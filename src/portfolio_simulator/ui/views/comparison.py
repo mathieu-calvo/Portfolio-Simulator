@@ -104,14 +104,14 @@ def render() -> None:
         with tab1:
             st.plotly_chart(
                 portfolio_evolution_chart(results),
-                use_container_width=True,
+                width="stretch",
             )
         with tab2:
-            st.dataframe(summary_stats_table(results), use_container_width=True)
+            st.dataframe(summary_stats_table(results), width="stretch")
         with tab3:
-            st.dataframe(multi_horizon_table(results), use_container_width=True)
+            st.dataframe(multi_horizon_table(results), width="stretch")
         with tab4:
             st.plotly_chart(
                 drawdown_chart(results),
-                use_container_width=True,
+                width="stretch",
             )

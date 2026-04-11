@@ -37,11 +37,20 @@ def weight_editor(
                 1.0,
                 value=asset.get("weight", 1.0 / len(assets)),
                 step=0.01,
-                key=f"{key}_{i}",
+                key=f"{key}_slider_{i}",
                 label_visibility="collapsed",
             )
         with col3:
-            st.text(f"{weight:.0%}")
+            weight = st.number_input(
+                "Weight %",
+                min_value=0.0,
+                max_value=100.0,
+                value=round(weight * 100, 1),
+                step=0.1,
+                format="%.1f",
+                key=f"{key}_input_{i}",
+                label_visibility="collapsed",
+            ) / 100
 
         updated.append({**asset, "weight": weight})
         total += weight
