@@ -11,16 +11,15 @@ from portfolio_simulator.domain.simulation import SimulationConfig
 
 
 def _get_services():
-    from portfolio_simulator.config import settings
     from portfolio_simulator.providers.yahoo import YahooFinanceProvider
+    from portfolio_simulator.services import get_portfolio_store
     from portfolio_simulator.services.backtest_engine import BacktestEngine
     from portfolio_simulator.services.data_service import DataService
-    from portfolio_simulator.services.portfolio_store import PortfolioStore
 
     provider = YahooFinanceProvider()
     data_service = DataService(provider)
     engine = BacktestEngine(data_service)
-    store = PortfolioStore(settings.db_path)
+    store = get_portfolio_store()
     return engine, store
 
 
@@ -28,7 +27,8 @@ def render() -> None:
     st.header("Portfolio Comparison")
 
     engine, store = _get_services()
-    portfolios = store.list_all()
+    user_id = st.session_state.get("user_id", "local")
+    portfolios = store.list_all(user_id)
 
     if len(portfolios) < 2:
         st.info("Save at least 2 portfolios to compare. Go to Portfolio Builder.")

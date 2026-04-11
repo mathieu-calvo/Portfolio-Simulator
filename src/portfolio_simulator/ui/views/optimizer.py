@@ -8,14 +8,13 @@ import streamlit as st
 
 
 def _get_services():
-    from portfolio_simulator.config import settings
     from portfolio_simulator.providers.yahoo import YahooFinanceProvider
+    from portfolio_simulator.services import get_portfolio_store
     from portfolio_simulator.services.data_service import DataService
-    from portfolio_simulator.services.portfolio_store import PortfolioStore
 
     provider = YahooFinanceProvider()
     data_service = DataService(provider)
-    store = PortfolioStore(settings.db_path)
+    store = get_portfolio_store()
     return data_service, store
 
 
@@ -23,7 +22,8 @@ def render() -> None:
     st.header("Portfolio Optimizer")
 
     data_service, store = _get_services()
-    portfolios = store.list_all()
+    user_id = st.session_state.get("user_id", "local")
+    portfolios = store.list_all(user_id)
 
     if not portfolios:
         st.info("Save a portfolio first to run optimization and projections.")

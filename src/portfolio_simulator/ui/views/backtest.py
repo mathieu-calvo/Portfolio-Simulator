@@ -15,16 +15,15 @@ from portfolio_simulator.domain.simulation import SimulationConfig
 
 
 def _get_services():
-    from portfolio_simulator.config import settings
     from portfolio_simulator.providers.yahoo import YahooFinanceProvider
+    from portfolio_simulator.services import get_portfolio_store
     from portfolio_simulator.services.backtest_engine import BacktestEngine
     from portfolio_simulator.services.data_service import DataService
-    from portfolio_simulator.services.portfolio_store import PortfolioStore
 
     provider = YahooFinanceProvider()
     data_service = DataService(provider)
     engine = BacktestEngine(data_service)
-    store = PortfolioStore(settings.db_path)
+    store = get_portfolio_store()
     return engine, store
 
 
@@ -32,7 +31,8 @@ def render() -> None:
     st.header("Backtest")
 
     engine, store = _get_services()
-    portfolios = store.list_all()
+    user_id = st.session_state.get("user_id", "local")
+    portfolios = store.list_all(user_id)
 
     if not portfolios:
         st.info("No portfolios saved yet. Go to Portfolio Builder to create one.")

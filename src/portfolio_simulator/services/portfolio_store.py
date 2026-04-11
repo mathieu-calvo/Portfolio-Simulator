@@ -15,10 +15,12 @@ logger = logging.getLogger(__name__)
 _CREATE_TABLE = """
 CREATE TABLE IF NOT EXISTS portfolios (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT UNIQUE NOT NULL,
+    user_id TEXT NOT NULL DEFAULT 'local',
+    name TEXT NOT NULL,
     data_json TEXT NOT NULL,
     created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
+    updated_at TEXT NOT NULL,
+    UNIQUE(user_id, name)
 )
 """
 
@@ -34,11 +36,43 @@ class PortfolioStore:
         self._db_path = Path(db_path)
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(str(self._db_path))
-        self._conn.execute(_CREATE_TABLE)
-        self._conn.commit()
+        self._migrate()
 
         if fixtures_dir and self._is_empty():
             self._seed_from_fixtures(Path(fixtures_dir))
+
+    def _migrate(self) -> None:
+        """Create table or migrate from old schema."""
+        # Check if old schema exists (name UNIQUE without user_id)
+        cursor = self._conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='portfolios'")
+        if cursor.fetchone():
+            # Table exists — check if user_id column is present
+            cols = [row[1] for row in self._conn.execute("PRAGMA table_info(portfolios)")]
+            if "user_id" not in cols:
+                logger.info("Migrating portfolios table: adding user_id column")
+                self._conn.execute("ALTER TABLE portfolios ADD COLUMN user_id TEXT NOT NULL DEFAULT 'local'")
+                # Recreate table with new unique constraint
+                self._conn.execute("""
+                    CREATE TABLE IF NOT EXISTS portfolios_new (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id TEXT NOT NULL DEFAULT 'local',
+                        name TEXT NOT NULL,
+                        data_json TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        UNIQUE(user_id, name)
+                    )
+                """)
+                self._conn.execute("""
+                    INSERT INTO portfolios_new (id, user_id, name, data_json, created_at, updated_at)
+                    SELECT id, user_id, name, data_json, created_at, updated_at FROM portfolios
+                """)
+                self._conn.execute("DROP TABLE portfolios")
+                self._conn.execute("ALTER TABLE portfolios_new RENAME TO portfolios")
+                self._conn.commit()
+        else:
+            self._conn.execute(_CREATE_TABLE)
+            self._conn.commit()
 
     def _is_empty(self) -> bool:
         row = self._conn.execute("SELECT COUNT(*) FROM portfolios").fetchone()
@@ -56,37 +90,39 @@ class PortfolioStore:
             except Exception:
                 logger.warning(f"Failed to seed from {path}", exc_info=True)
 
-    def save(self, portfolio: Portfolio) -> None:
+    def save(self, portfolio: Portfolio, user_id: str = "local") -> None:
         """Save or update a portfolio."""
         now = datetime.now().isoformat()
         data_json = json.dumps(portfolio.to_dict())
         self._conn.execute(
-            """INSERT INTO portfolios (name, data_json, created_at, updated_at)
-               VALUES (?, ?, ?, ?)
-               ON CONFLICT(name) DO UPDATE SET data_json = ?, updated_at = ?""",
-            (portfolio.name, data_json, now, now, data_json, now),
+            """INSERT INTO portfolios (user_id, name, data_json, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?)
+               ON CONFLICT(user_id, name) DO UPDATE SET data_json = ?, updated_at = ?""",
+            (user_id, portfolio.name, data_json, now, now, data_json, now),
         )
         self._conn.commit()
 
-    def load(self, name: str) -> Portfolio:
+    def load(self, name: str, user_id: str = "local") -> Portfolio:
         """Load a portfolio by name."""
         row = self._conn.execute(
-            "SELECT data_json FROM portfolios WHERE name = ?", (name,)
+            "SELECT data_json FROM portfolios WHERE user_id = ? AND name = ?", (user_id, name)
         ).fetchone()
         if row is None:
             raise KeyError(f"Portfolio '{name}' not found")
         return Portfolio.from_dict(json.loads(row[0]))
 
-    def list_all(self) -> list[Portfolio]:
-        """List all saved portfolios."""
+    def list_all(self, user_id: str = "local") -> list[Portfolio]:
+        """List all saved portfolios for a user."""
         rows = self._conn.execute(
-            "SELECT data_json FROM portfolios ORDER BY name"
+            "SELECT data_json FROM portfolios WHERE user_id = ? ORDER BY name", (user_id,)
         ).fetchall()
         return [Portfolio.from_dict(json.loads(row[0])) for row in rows]
 
-    def delete(self, name: str) -> None:
+    def delete(self, name: str, user_id: str = "local") -> None:
         """Delete a portfolio by name."""
-        self._conn.execute("DELETE FROM portfolios WHERE name = ?", (name,))
+        self._conn.execute(
+            "DELETE FROM portfolios WHERE user_id = ? AND name = ?", (user_id, name)
+        )
         self._conn.commit()
 
     def close(self) -> None:

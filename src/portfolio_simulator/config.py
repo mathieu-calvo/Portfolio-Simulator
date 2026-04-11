@@ -27,6 +27,10 @@ class Settings(BaseSettings):
     # Performance
     max_concurrent_fetches: int = 10
 
+    # Cloud / auth
+    database_url: str | None = None
+    require_auth: bool = False
+
     # Future API keys
     bloomberg_api_key: str | None = None
     reuters_api_key: str | None = None
@@ -38,4 +42,18 @@ class Settings(BaseSettings):
         return self.cache_dir / "portfolio_simulator.db"
 
 
-settings = Settings()
+def _load_settings() -> Settings:
+    """Load settings, supplementing with Streamlit secrets when available."""
+    s = Settings()
+    try:
+        import streamlit as st
+        if "database" in st.secrets and not s.database_url:
+            s.database_url = st.secrets["database"]["url"]
+        if not s.require_auth and "credentials" in st.secrets:
+            s.require_auth = True
+    except Exception:
+        pass
+    return s
+
+
+settings = _load_settings()

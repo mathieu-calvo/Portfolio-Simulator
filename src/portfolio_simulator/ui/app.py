@@ -11,6 +11,20 @@ st.set_page_config(
 
 
 def main() -> None:
+    from portfolio_simulator.config import settings
+
+    # --- Authentication gate ---
+    if settings.require_auth:
+        from portfolio_simulator.ui.auth import authenticate
+
+        user_id = authenticate()
+        if user_id is None:
+            st.stop()
+        st.session_state["user_id"] = user_id
+    else:
+        st.session_state.setdefault("user_id", "local")
+
+    # --- Navigation ---
     st.sidebar.title("Portfolio Simulator")
     page = st.sidebar.radio(
         "Navigate",

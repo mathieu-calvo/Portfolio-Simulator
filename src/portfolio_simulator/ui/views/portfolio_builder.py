@@ -17,11 +17,8 @@ def _get_provider():
 
 
 def _get_store():
-    from portfolio_simulator.config import settings
-    from portfolio_simulator.services.portfolio_store import PortfolioStore
-    import importlib.resources
-    fixtures_dir = None
-    return PortfolioStore(settings.db_path, fixtures_dir)
+    from portfolio_simulator.services import get_portfolio_store
+    return get_portfolio_store()
 
 
 def render() -> None:
@@ -29,6 +26,7 @@ def render() -> None:
 
     provider = _get_provider()
     store = _get_store()
+    user_id = st.session_state.get("user_id", "local")
 
     # Initialize session state for portfolio building
     if "builder_assets" not in st.session_state:
@@ -106,7 +104,7 @@ def render() -> None:
                         allocations=allocations,
                         base_currency=currency,
                     )
-                    store.save(portfolio)
+                    store.save(portfolio, user_id)
                     st.success(f"Portfolio '{name}' saved!")
                     st.session_state.builder_assets = []
                 except Exception as e:
@@ -115,7 +113,7 @@ def render() -> None:
     # --- Existing Portfolios ---
     st.divider()
     st.subheader("Saved Portfolios")
-    portfolios = store.list_all()
+    portfolios = store.list_all(user_id)
     if not portfolios:
         st.info("No portfolios saved yet.")
     else:
@@ -124,5 +122,5 @@ def render() -> None:
                 for a in p.allocations:
                     st.text(f"  {a.asset.ticker} ({a.asset.name}): {a.weight:.1%}")
                 if st.button(f"Delete {p.name}", key=f"del_{p.name}"):
-                    store.delete(p.name)
+                    store.delete(p.name, user_id)
                     st.rerun()

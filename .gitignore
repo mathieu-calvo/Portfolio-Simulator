@@ -24,6 +24,9 @@ env/
 # Environment
 .env
 
+# Streamlit secrets (contains credentials and DB URLs)
+.streamlit/secrets.toml
+
 # Local data (SQLite DB, cached market data)
 data/
 
