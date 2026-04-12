@@ -8,12 +8,10 @@ import streamlit as st
 
 
 def _get_services():
-    from portfolio_simulator.providers.yahoo import YahooFinanceProvider
-    from portfolio_simulator.services import get_portfolio_store
-    from portfolio_simulator.services.data_service import DataService
+    from portfolio_simulator.services import get_data_service, get_portfolio_store
 
-    provider = YahooFinanceProvider()
-    data_service = DataService(provider)
+    provider_name = st.session_state.get("provider_name", "yahoo")
+    data_service = get_data_service(provider_name)
     store = get_portfolio_store()
     return data_service, store
 

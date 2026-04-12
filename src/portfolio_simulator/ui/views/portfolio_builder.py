@@ -12,8 +12,9 @@ from portfolio_simulator.ui.components.weight_editor import weight_editor
 
 
 def _get_provider():
-    from portfolio_simulator.providers.yahoo import YahooFinanceProvider
-    return YahooFinanceProvider()
+    from portfolio_simulator.services import get_provider
+    provider_name = st.session_state.get("provider_name", "yahoo")
+    return get_provider(provider_name)
 
 
 def _get_store():
@@ -66,6 +67,13 @@ def render() -> None:
 
     # --- Asset Search ---
     st.subheader("Add Assets")
+    from portfolio_simulator.ui.components.provider_selector import PROVIDER_META
+    _meta = PROVIDER_META.get(st.session_state.get("provider_name", "yahoo"), {})
+    if _meta:
+        st.caption(
+            f"Assets are searched in **{_meta['display_name']}**. "
+            f"Change the data source in the sidebar."
+        )
     selected = asset_search(provider, key="builder")
 
     # Capture new selection into session state so it persists across reruns

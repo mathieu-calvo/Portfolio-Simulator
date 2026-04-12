@@ -11,16 +11,14 @@ from portfolio_simulator.domain.simulation import SimulationConfig
 
 
 def _get_services():
-    from portfolio_simulator.providers.yahoo import YahooFinanceProvider
-    from portfolio_simulator.services import get_portfolio_store
+    from portfolio_simulator.services import get_data_service, get_portfolio_store
     from portfolio_simulator.services.backtest_engine import BacktestEngine
-    from portfolio_simulator.services.data_service import DataService
 
-    provider = YahooFinanceProvider()
-    data_service = DataService(provider)
+    provider_name = st.session_state.get("provider_name", "yahoo")
+    data_service = get_data_service(provider_name)
     engine = BacktestEngine(data_service)
     store = get_portfolio_store()
-    return engine, store
+    return engine, store, data_service
 
 
 def render() -> None:
@@ -65,7 +63,7 @@ def render() -> None:
             """
         )
 
-    engine, store = _get_services()
+    engine, store, data_service = _get_services()
     user_id = st.session_state.get("user_id", "local")
     portfolios = store.list_all(user_id)
 
@@ -154,3 +152,73 @@ def render() -> None:
                 drawdown_chart(results),
                 width="stretch",
             )
+
+        # --- Raw Data Export ---
+        _render_export_section(results, selected_portfolios, data_service)
+
+
+def _render_export_section(results, selected_portfolios, data_service) -> None:
+    """Render a collapsible section to inspect and export comparison data."""
+    import pandas as pd
+
+    from portfolio_simulator.ui.components.data_export import download_excel_button
+
+    st.divider()
+    with st.expander("View & export raw data"):
+        st.caption(
+            "Inspect the underlying time series used in this comparison and download "
+            "them as Excel files for further analysis."
+        )
+
+        # Build a combined DataFrame with one column per portfolio
+        values_df = pd.DataFrame(
+            {r.portfolio_name: r.portfolio_value for r in results}
+        )
+        returns_df = pd.DataFrame(
+            {r.portfolio_name: r.daily_returns for r in results}
+        )
+
+        data_tab1, data_tab2 = st.tabs(["Portfolio Values & Returns", "Asset Prices"])
+
+        with data_tab1:
+            st.markdown("**Portfolio Values**")
+            st.dataframe(values_df.tail(250), use_container_width=True)
+            st.caption(f"Showing last 250 of {len(values_df)} rows. Download full series below.")
+
+            download_excel_button(
+                label="Download comparison time series (.xlsx)",
+                sheets={
+                    "Portfolio Values": values_df,
+                    "Daily Returns": returns_df,
+                },
+                filename="portfolio_comparison.xlsx",
+                key="cmp_dl_values",
+                help="Multi-sheet workbook with portfolio values and daily returns.",
+            )
+
+        with data_tab2:
+            st.caption(
+                "Asset-level prices for every portfolio in the comparison, fetched "
+                "from the selected data source (cached)."
+            )
+            try:
+                # Get the config from the first result (all share the same config)
+                cfg = results[0].config
+                sheets: dict[str, pd.DataFrame] = {}
+                for portfolio in selected_portfolios:
+                    prices = data_service.get_prices_bulk(
+                        portfolio.tickers, cfg.start_date, cfg.end_date
+                    )
+                    sheets[f"{portfolio.name} Prices"] = prices
+                    with st.expander(f"Preview: {portfolio.name}"):
+                        st.dataframe(prices.tail(100), use_container_width=True)
+
+                download_excel_button(
+                    label="Download all asset prices (.xlsx)",
+                    sheets=sheets,
+                    filename="comparison_asset_prices.xlsx",
+                    key="cmp_dl_prices",
+                    help="One sheet per portfolio, containing daily asset prices.",
+                )
+            except Exception as e:
+                st.error(f"Could not load asset prices: {e}")

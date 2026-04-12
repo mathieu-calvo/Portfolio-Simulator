@@ -39,6 +39,10 @@ def main() -> None:
         ["Portfolio Builder", "Backtest", "Comparison", "Optimizer"],
     )
 
+    # --- Data Source selector (sidebar) ---
+    from portfolio_simulator.ui.components.provider_selector import render_provider_selector
+    render_provider_selector()
+
     if page == "Portfolio Builder":
         from portfolio_simulator.ui.views.portfolio_builder import render
         render()

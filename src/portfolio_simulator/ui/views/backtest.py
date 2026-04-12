@@ -15,16 +15,14 @@ from portfolio_simulator.domain.simulation import SimulationConfig
 
 
 def _get_services():
-    from portfolio_simulator.providers.yahoo import YahooFinanceProvider
-    from portfolio_simulator.services import get_portfolio_store
+    from portfolio_simulator.services import get_data_service, get_portfolio_store
     from portfolio_simulator.services.backtest_engine import BacktestEngine
-    from portfolio_simulator.services.data_service import DataService
 
-    provider = YahooFinanceProvider()
-    data_service = DataService(provider)
+    provider_name = st.session_state.get("provider_name", "yahoo")
+    data_service = get_data_service(provider_name)
     engine = BacktestEngine(data_service)
     store = get_portfolio_store()
-    return engine, store
+    return engine, store, data_service
 
 
 def render() -> None:
@@ -68,7 +66,7 @@ def render() -> None:
             """
         )
 
-    engine, store = _get_services()
+    engine, store, data_service = _get_services()
     user_id = st.session_state.get("user_id", "local")
     portfolios = store.list_all(user_id)
 
@@ -207,3 +205,84 @@ def render() -> None:
                 rolling_volatility_chart([result]),
                 width="stretch",
             )
+
+        # --- Raw Data Export ---
+        _render_export_section(result, portfolio, data_service)
+
+
+def _render_export_section(result, portfolio, data_service) -> None:
+    """Render a collapsible section to inspect and export raw backtest data."""
+    import pandas as pd
+
+    from portfolio_simulator.ui.components.data_export import download_excel_button
+
+    st.divider()
+    with st.expander("View & export raw data"):
+        st.caption(
+            "Inspect the underlying time series used in this backtest and download "
+            "them as Excel files for further analysis."
+        )
+
+        data_tab1, data_tab2, data_tab3 = st.tabs(
+            ["Portfolio Time Series", "Asset Prices", "Asset Returns"]
+        )
+
+        # Portfolio-level outputs — always available from the result object
+        with data_tab1:
+            portfolio_df = pd.DataFrame({
+                "portfolio_value": result.portfolio_value,
+                "daily_return": result.daily_returns,
+            })
+            st.dataframe(portfolio_df.tail(250), use_container_width=True)
+            st.caption(f"Showing last 250 of {len(portfolio_df)} rows. Download full series below.")
+            download_excel_button(
+                label="Download portfolio time series (.xlsx)",
+                sheets={
+                    "Portfolio Value": result.portfolio_value.to_frame("value"),
+                    "Daily Returns": result.daily_returns.to_frame("return"),
+                    "Asset Weights": result.asset_weights_over_time,
+                },
+                filename=f"{result.portfolio_name}_portfolio.xlsx",
+                key="bt_dl_portfolio",
+                help="Multi-sheet workbook: portfolio value, daily returns, and asset weight trajectories.",
+            )
+
+        # Asset-level data — fetched from the cache via data_service
+        with data_tab2:
+            try:
+                prices = data_service.get_prices_bulk(
+                    portfolio.tickers,
+                    result.config.start_date,
+                    result.config.end_date,
+                )
+                st.dataframe(prices.tail(250), use_container_width=True)
+                st.caption(f"Showing last 250 of {len(prices)} rows. Download full series below.")
+                download_excel_button(
+                    label="Download asset prices (.xlsx)",
+                    sheets={"Asset Prices": prices},
+                    filename=f"{result.portfolio_name}_asset_prices.xlsx",
+                    key="bt_dl_prices",
+                    help="Daily prices for every asset in the portfolio.",
+                )
+            except Exception as e:
+                st.error(f"Could not load asset prices: {e}")
+
+        with data_tab3:
+            try:
+                prices = data_service.get_prices_bulk(
+                    portfolio.tickers,
+                    result.config.start_date,
+                    result.config.end_date,
+                )
+                returns = prices.pct_change().dropna(how="all")
+                st.dataframe(returns.tail(250), use_container_width=True)
+                st.caption(f"Showing last 250 of {len(returns)} rows. Download full series below.")
+                download_excel_button(
+                    label="Download asset returns (.xlsx)",
+                    sheets={"Asset Returns": returns},
+                    filename=f"{result.portfolio_name}_asset_returns.xlsx",
+                    key="bt_dl_returns",
+                    help="Daily percentage returns for every asset in the portfolio.",
+                )
+            except Exception as e:
+                st.error(f"Could not compute asset returns: {e}")
