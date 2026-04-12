@@ -34,7 +34,21 @@ class PgPortfolioStore:
     """Save and load portfolios from PostgreSQL with per-user isolation."""
 
     def __init__(self, database_url: str) -> None:
-        self._conn = psycopg2.connect(database_url)
+        # Ensure SSL is required (Supabase enforces SSL)
+        if "sslmode=" not in database_url:
+            sep = "&" if "?" in database_url else "?"
+            database_url = f"{database_url}{sep}sslmode=require"
+        try:
+            self._conn = psycopg2.connect(database_url, connect_timeout=10)
+        except psycopg2.OperationalError as e:
+            # Re-raise with a clearer message that Streamlit will show
+            # (scrub the password from any URL that appears in the error)
+            raise RuntimeError(
+                f"Failed to connect to PostgreSQL: {e}. "
+                f"Check that your database_url uses the Supabase Session pooler "
+                f"(hostname should contain 'pooler.supabase.com') and that your "
+                f"password is URL-encoded if it contains special characters."
+            ) from e
         self._conn.autocommit = False
         self._ensure_tables()
 
