@@ -22,15 +22,28 @@ def _to_mutable(obj):
     return obj
 
 
+def _get_authenticator() -> stauth.Authenticate:
+    """Return a cached Authenticate instance, building it once per session.
+
+    We can't use @st.cache_resource because the Authenticate constructor
+    instantiates a cookie manager (a streamlit custom component / widget),
+    which isn't allowed inside cached functions. Instead we stash the instance
+    in st.session_state so it's reused across reruns.
+    """
+    if "_authenticator" not in st.session_state:
+        credentials = _to_mutable(st.secrets["credentials"])
+        st.session_state["_authenticator"] = stauth.Authenticate(
+            credentials,
+            st.secrets["cookie"]["name"],
+            st.secrets["cookie"]["key"],
+            st.secrets["cookie"]["expiry_days"],
+        )
+    return st.session_state["_authenticator"]
+
+
 def authenticate() -> str | None:
     """Run login flow. Returns username if authenticated, None otherwise."""
-    credentials = _to_mutable(st.secrets["credentials"])
-    authenticator = stauth.Authenticate(
-        credentials,
-        st.secrets["cookie"]["name"],
-        st.secrets["cookie"]["key"],
-        st.secrets["cookie"]["expiry_days"],
-    )
+    authenticator = _get_authenticator()
 
     authenticator.login()
 
