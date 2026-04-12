@@ -17,30 +17,24 @@ PROVIDER_META: dict[str, dict] = {
     "yahoo": {
         "display_name": "Yahoo! Finance",
         "color": "#5F01D1",  # Yahoo brand purple
-        "short": "YF",
         "description": "Free public markets data via the yfinance library. "
                        "Supports stocks, ETFs, indices, crypto, and FX.",
-        "logo_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/89/Logo_yahoo%21_finance.svg/320px-Logo_yahoo%21_finance.svg.png",
         "website": "https://finance.yahoo.com",
         "available": True,
     },
     "reuters": {
         "display_name": "Reuters / Refinitiv",
         "color": "#FF8000",
-        "short": "RT",
         "description": "Professional-grade market data via Refinitiv Eikon. "
                        "Requires an API key — set PSIM_REUTERS_API_KEY.",
-        "logo_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7a/Reuters_logo.svg/320px-Reuters_logo.svg.png",
         "website": "https://www.refinitiv.com",
         "available": False,
     },
     "bloomberg": {
         "display_name": "Bloomberg",
         "color": "#000000",
-        "short": "BB",
         "description": "Bloomberg Terminal data via BLPAPI. Requires a "
                        "Bloomberg Terminal license.",
-        "logo_url": None,
         "website": "https://www.bloomberg.com/professional",
         "available": False,
     },
@@ -52,17 +46,15 @@ def _available_providers() -> list[str]:
 
 
 def _render_badge(meta: dict) -> None:
-    """Render a branded badge for the given provider, preferring its logo."""
-    logo_url = meta.get("logo_url")
-    if logo_url:
-        # Streamlit handles broken URLs gracefully by showing a placeholder,
-        # but the text fallback below will still be visible so the user
-        # always knows which provider is active.
-        try:
-            st.image(logo_url, width=180)
-        except Exception:
-            pass
+    """Render a branded text badge for the given provider.
 
+    We deliberately don't fetch logo images from external URLs — hotlinked
+    images (e.g. Wikipedia Commons) often fail to render on Streamlit Cloud
+    and leave a broken-image icon in the sidebar. A styled text badge in
+    the provider's brand color is reliable, clean, and offline-friendly.
+    To add a real logo later, drop an SVG/PNG into src/portfolio_simulator/ui/assets/
+    and extend this function to load it via importlib.resources.
+    """
     st.markdown(
         f"""
         <div style='

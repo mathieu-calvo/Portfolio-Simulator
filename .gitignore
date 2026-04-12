@@ -41,3 +41,6 @@ Thumbs.db
 htmlcov/
 .coverage
 .coverage.*
+
+# Screenshots
+Capture.JPG
