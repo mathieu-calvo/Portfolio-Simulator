@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+import threading
 from datetime import datetime
 from pathlib import Path
 
@@ -35,7 +36,14 @@ class PortfolioStore:
     def __init__(self, db_path: str | Path, fixtures_dir: str | Path | None = None) -> None:
         self._db_path = Path(db_path)
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(str(self._db_path))
+        # check_same_thread=False is required because this store is wrapped
+        # in @st.cache_resource and therefore shared across Streamlit's
+        # worker threads. All access is serialized through self._lock so
+        # the single connection is used safely from multiple threads.
+        self._conn = sqlite3.connect(
+            str(self._db_path), check_same_thread=False
+        )
+        self._lock = threading.Lock()
         self._migrate()
 
         if fixtures_dir and self._is_empty():
@@ -94,36 +102,41 @@ class PortfolioStore:
         """Save or update a portfolio."""
         now = datetime.now().isoformat()
         data_json = json.dumps(portfolio.to_dict())
-        self._conn.execute(
-            """INSERT INTO portfolios (user_id, name, data_json, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?)
-               ON CONFLICT(user_id, name) DO UPDATE SET data_json = ?, updated_at = ?""",
-            (user_id, portfolio.name, data_json, now, now, data_json, now),
-        )
-        self._conn.commit()
+        with self._lock:
+            self._conn.execute(
+                """INSERT INTO portfolios (user_id, name, data_json, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?)
+                   ON CONFLICT(user_id, name) DO UPDATE SET data_json = ?, updated_at = ?""",
+                (user_id, portfolio.name, data_json, now, now, data_json, now),
+            )
+            self._conn.commit()
 
     def load(self, name: str, user_id: str = "local") -> Portfolio:
         """Load a portfolio by name."""
-        row = self._conn.execute(
-            "SELECT data_json FROM portfolios WHERE user_id = ? AND name = ?", (user_id, name)
-        ).fetchone()
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT data_json FROM portfolios WHERE user_id = ? AND name = ?", (user_id, name)
+            ).fetchone()
         if row is None:
             raise KeyError(f"Portfolio '{name}' not found")
         return Portfolio.from_dict(json.loads(row[0]))
 
     def list_all(self, user_id: str = "local") -> list[Portfolio]:
         """List all saved portfolios for a user."""
-        rows = self._conn.execute(
-            "SELECT data_json FROM portfolios WHERE user_id = ? ORDER BY name", (user_id,)
-        ).fetchall()
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT data_json FROM portfolios WHERE user_id = ? ORDER BY name", (user_id,)
+            ).fetchall()
         return [Portfolio.from_dict(json.loads(row[0])) for row in rows]
 
     def delete(self, name: str, user_id: str = "local") -> None:
         """Delete a portfolio by name."""
-        self._conn.execute(
-            "DELETE FROM portfolios WHERE user_id = ? AND name = ?", (user_id, name)
-        )
-        self._conn.commit()
+        with self._lock:
+            self._conn.execute(
+                "DELETE FROM portfolios WHERE user_id = ? AND name = ?", (user_id, name)
+            )
+            self._conn.commit()
 
     def close(self) -> None:
-        self._conn.close()
+        with self._lock:
+            self._conn.close()
