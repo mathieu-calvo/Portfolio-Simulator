@@ -47,10 +47,11 @@ def summary_stats_table(results: list[BacktestResult]) -> pd.DataFrame:
 
 
 def multi_horizon_table(results: list[BacktestResult]) -> pd.DataFrame:
-    """Multi-horizon return and volatility table.
+    """Multi-horizon return and volatility table, formatted as percentages.
 
     Rows are horizons (YTD, 1Y, 3Y, 5Y, 10Y, Full Period).
     Columns are multi-level: (portfolio_name, metric).
+    Numeric cells are formatted as percentage strings (e.g. "12.34%").
     """
     all_data = {}
     for r in results:
@@ -68,4 +69,12 @@ def multi_horizon_table(results: list[BacktestResult]) -> pd.DataFrame:
 
     df = pd.DataFrame(all_data).T
     df.columns = pd.MultiIndex.from_tuples(df.columns)
-    return df
+
+    # Format numeric values as percentages for consistent display with
+    # the summary stats table. NaN / None stays as "—".
+    def _fmt(x):
+        if isinstance(x, (int, float)) and pd.notna(x):
+            return f"{x:.2%}"
+        return "—"
+
+    return df.map(_fmt)

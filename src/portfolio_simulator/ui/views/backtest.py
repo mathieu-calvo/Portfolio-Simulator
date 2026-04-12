@@ -30,6 +30,44 @@ def _get_services():
 def render() -> None:
     st.header("Backtest")
 
+    st.caption(
+        "Run a historical simulation of a saved portfolio with configurable "
+        "rebalancing, contributions, fees, and taxes."
+    )
+    with st.expander("How Backtest works"):
+        st.markdown(
+            """
+            **What it does:** Replays your portfolio over history using real daily prices,
+            applying your chosen rebalancing rule, recurring investment schedule, and
+            cost assumptions. Outputs performance metrics and diagnostic charts.
+
+            **How it works:**
+            1. Downloads historical daily prices for every asset in the portfolio.
+            2. Starts on the selected start date with the initial investment, allocated
+               according to the target weights.
+            3. Applies **recurring contributions** (if enabled) at the chosen cadence.
+            4. **Rebalances** according to the chosen rule:
+               - **None:** weights drift freely.
+               - **Calendar:** snap back to target at fixed intervals (monthly/quarterly/yearly).
+               - **Tolerance:** rebalance only when any asset drifts beyond the tolerance band.
+            5. Applies **costs** at each transaction (transaction cost, management fee,
+               TER, and tax on realized gains) and produces the final P&L path.
+
+            **Key metrics:**
+            - **Annualized Return:** Geometric mean annual return over the period.
+            - **Sharpe Ratio:** `(excess return) / volatility`. Risk-adjusted return.
+            - **Sortino Ratio:** Same but penalizes only downside volatility.
+            - **Max Drawdown:** Largest peak-to-trough loss in the equity curve.
+            - **VaR (95%):** 95th-percentile worst daily loss — historical estimate.
+
+            **Caveats:**
+            - Past performance is not predictive of future returns.
+            - Survivorship bias: only currently-listed tickers are available.
+            - Tax treatment is simplified (flat rate on realized gains, not
+              jurisdiction-specific).
+            """
+        )
+
     engine, store = _get_services()
     user_id = st.session_state.get("user_id", "local")
     portfolios = store.list_all(user_id)

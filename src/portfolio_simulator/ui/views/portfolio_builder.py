@@ -24,6 +24,38 @@ def _get_store():
 def render() -> None:
     st.header("Portfolio Builder")
 
+    st.caption(
+        "Build a portfolio by searching for assets and setting their target weights. "
+        "Saved portfolios can be used in the Backtest, Comparison, and Optimizer views."
+    )
+    with st.expander("How Portfolio Builder works"):
+        st.markdown(
+            """
+            **What it does:** Lets you assemble a multi-asset portfolio by searching a
+            universe of stocks, ETFs, and other instruments, then assigning each asset a
+            target weight. The saved portfolio becomes the input to every other analysis
+            in the app.
+
+            **Workflow:**
+            1. Search for an asset (name or ticker) — autocomplete suggests matches.
+            2. Confirm the selection (you'll see a preview card) and click **Add to Portfolio**.
+            3. Adjust weights in the weight editor — the sum must equal 100%.
+            4. Give the portfolio a name, pick a base currency, and click **Save Portfolio**.
+
+            **Weights:** Represent the target allocation at each rebalance. Actual weights
+            drift between rebalance dates as asset prices change. Rebalancing frequency is
+            set later, in the Backtest view.
+
+            **Base currency:** All returns, values, and performance metrics are reported
+            in this currency. FX conversions are applied automatically when an asset trades
+            in a different currency.
+
+            **TER (Total Expense Ratio):** An annual fee charged by fund managers
+            (ETFs/mutual funds). When present and enabled in the backtest, it's deducted
+            daily from the asset's return as `ter / 252`.
+            """
+        )
+
     provider = _get_provider()
     store = _get_store()
     user_id = st.session_state.get("user_id", "local")
@@ -36,21 +68,40 @@ def render() -> None:
     st.subheader("Add Assets")
     selected = asset_search(provider, key="builder")
 
-    if selected and st.button("Add to Portfolio"):
-        # Avoid duplicates
-        existing = {a["ticker"] for a in st.session_state.builder_assets}
-        if selected.ticker not in existing:
-            st.session_state.builder_assets.append({
-                "ticker": selected.ticker,
-                "name": selected.name,
-                "asset_type": selected.asset_type.value,
-                "currency": selected.currency,
-                "ter": selected.ter or 0.0,
-                "weight": 0.0,
-            })
-            st.rerun()
-        else:
-            st.warning(f"{selected.ticker} is already in the portfolio.")
+    # Capture new selection into session state so it persists across reruns
+    # until the user adds it or clears it. Fixes the UX issue where the
+    # searchbox clears on submit, leaving no visible trace of the selection.
+    if selected is not None:
+        st.session_state["pending_asset"] = selected
+
+    pending = st.session_state.get("pending_asset")
+    if pending is not None:
+        st.success(
+            f"Selected: **{pending.ticker}** — {pending.name}  \n"
+            f"Type: `{pending.asset_type.value}` · Currency: `{pending.currency}`"
+            + (f" · TER: `{(pending.ter or 0) * 100:.2f}%`" if pending.ter else "")
+        )
+        col_add, col_clear = st.columns([1, 1])
+        with col_add:
+            if st.button("Add to Portfolio", type="primary", use_container_width=True):
+                existing = {a["ticker"] for a in st.session_state.builder_assets}
+                if pending.ticker not in existing:
+                    st.session_state.builder_assets.append({
+                        "ticker": pending.ticker,
+                        "name": pending.name,
+                        "asset_type": pending.asset_type.value,
+                        "currency": pending.currency,
+                        "ter": pending.ter or 0.0,
+                        "weight": 0.0,
+                    })
+                    del st.session_state["pending_asset"]
+                    st.rerun()
+                else:
+                    st.warning(f"{pending.ticker} is already in the portfolio.")
+        with col_clear:
+            if st.button("Clear selection", use_container_width=True):
+                del st.session_state["pending_asset"]
+                st.rerun()
 
     # --- Weight Editor ---
     if st.session_state.builder_assets:

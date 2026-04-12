@@ -26,6 +26,45 @@ def _get_services():
 def render() -> None:
     st.header("Portfolio Comparison")
 
+    st.caption(
+        "Run multiple portfolios through the same backtest configuration and compare "
+        "their risk/return profiles side by side."
+    )
+    with st.expander("How Comparison works"):
+        st.markdown(
+            """
+            **What it does:** Backtests 2 to 5 saved portfolios over the same time period
+            with the same simulation parameters, then presents their performance on a
+            common basis. Use it to answer "is portfolio A better than portfolio B?"
+
+            **How it works:**
+            1. Each portfolio is backtested independently using identical start/end dates,
+               initial investment, and rebalancing rule.
+            2. Results are aligned to a common date axis — a portfolio is only evaluated
+               from its first fully-available trading day.
+            3. Performance is reported on both an absolute and a risk-adjusted basis.
+
+            **Tabs:**
+            - **Evolution:** Equity curves overlaid on the same chart — visual winner is
+              the one that ends highest.
+            - **Summary:** Full comparison table with all key metrics (returns,
+              volatility, Sharpe, drawdown, etc.).
+            - **Multi-Horizon:** Returns and volatility broken out by standard lookback
+              windows (YTD, 1Y, 3Y, 5Y, 10Y, full period). Useful for spotting whether
+              a portfolio's edge is recent or durable.
+            - **Drawdown:** Drawdown curves overlaid — the shallower the drawdowns, the
+              better the downside protection.
+
+            **How to interpret:**
+            - A higher annualized return isn't better if it comes with disproportionately
+              more volatility. Use the **Sharpe ratio** to compare risk-adjusted returns.
+            - A portfolio with lower max drawdown may be preferable for investors with
+              lower risk tolerance, even at a small cost to return.
+            - The multi-horizon view reveals whether a "winner" is consistent across
+              market regimes or just benefited from a single strong period.
+            """
+        )
+
     engine, store = _get_services()
     user_id = st.session_state.get("user_id", "local")
     portfolios = store.list_all(user_id)

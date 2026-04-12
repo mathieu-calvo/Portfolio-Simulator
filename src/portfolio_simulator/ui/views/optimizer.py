@@ -21,6 +21,11 @@ def _get_services():
 def render() -> None:
     st.header("Portfolio Optimizer")
 
+    st.caption(
+        "Explore the efficient frontier of your portfolio's assets and project future "
+        "outcomes using Monte Carlo simulation."
+    )
+
     data_service, store = _get_services()
     user_id = st.session_state.get("user_id", "local")
     portfolios = store.list_all(user_id)
@@ -34,6 +39,41 @@ def render() -> None:
     # --- Efficient Frontier ---
     with tab1:
         st.subheader("Efficient Frontier Analysis")
+        st.caption(
+            "Finds the portfolios with the best possible risk/return trade-off for "
+            "your asset universe, based on historical returns and covariances."
+        )
+        with st.expander("How Efficient Frontier works"):
+            st.markdown(
+                """
+                **What it does:** Computes the set of portfolio weights that achieve the
+                lowest possible volatility for each level of expected return — the classic
+                Markowitz (1952) efficient frontier. Two special points are highlighted:
+
+                - **Max Sharpe Portfolio:** The tangency portfolio — the mix that
+                  maximizes the Sharpe ratio `(return − risk_free) / volatility`. This is
+                  the "best" risk-adjusted portfolio under mean-variance assumptions.
+                - **Min Volatility Portfolio:** The global minimum variance portfolio —
+                  the lowest-risk combination of your assets regardless of return.
+
+                **How it works:**
+                1. Daily returns are computed for each asset over the selected date range.
+                2. Expected returns are annualized means; the covariance matrix is
+                   annualized using 252 trading days.
+                3. A quadratic optimizer finds weights that minimize variance subject to
+                   `sum(w) = 1`, `w >= 0` (no short selling) for each target return.
+                4. The frontier is the envelope of these optimal portfolios.
+
+                **Caveats:**
+                - Uses **historical** returns as a proxy for expected future returns —
+                  this is noisy and backward-looking.
+                - Assumes returns are normally distributed and correlations are stable.
+                - Small changes in inputs can produce large weight shifts (classic
+                  Markowitz sensitivity problem).
+                - No transaction costs, taxes, or constraints beyond long-only.
+                """
+            )
+
         portfolio_names = [p.name for p in portfolios]
         selected_name = st.selectbox("Select portfolio", portfolio_names, key="opt_select")
         portfolio = next(p for p in portfolios if p.name == selected_name)
@@ -91,6 +131,41 @@ def render() -> None:
     # --- Monte Carlo ---
     with tab2:
         st.subheader("Monte Carlo Projection")
+        st.caption(
+            "Projects thousands of possible future paths for your portfolio based on "
+            "the return distribution observed in the most recent backtest."
+        )
+        with st.expander("How Monte Carlo projection works"):
+            st.markdown(
+                """
+                **What it does:** Takes the daily return distribution from your latest
+                backtest and simulates thousands of possible future paths for the
+                portfolio value. It answers: "If the future looks like the past, what
+                range of outcomes could I expect?"
+
+                **How it works:**
+                1. Daily returns from the backtest are sampled with replacement
+                   (bootstrap) to build each future path.
+                2. Each scenario is compounded forward for the selected horizon, with
+                   optional monthly contributions added.
+                3. At every future date, the 5th, 25th, 50th (median), 75th, and 95th
+                   percentiles across all scenarios are reported.
+
+                **Interpreting the results:**
+                - **P5 (Very Bad):** 5% of scenarios ended at or below this value. A
+                  rough "worst plausible case".
+                - **Median:** The middle outcome — half of scenarios ended above, half below.
+                - **P95 (Great):** Only 5% of scenarios exceeded this. A "best plausible case".
+
+                **Caveats:**
+                - Bootstrap assumes historical returns are representative of the future —
+                  it cannot predict regime changes, crises, or structural shifts.
+                - Daily returns are sampled independently, so some autocorrelation and
+                  volatility clustering present in real markets is lost.
+                - The projection starts from the **final value** of the backtest, not
+                  today's market price.
+                """
+            )
 
         if "backtest_result" not in st.session_state:
             st.info("Run a backtest first to generate Monte Carlo projections.")
@@ -99,6 +174,15 @@ def render() -> None:
         from portfolio_simulator.domain.results import BacktestResult
 
         bt_result: BacktestResult = st.session_state.backtest_result
+
+        # Make the input portfolio explicit — users were confused about which
+        # portfolio the projection was based on.
+        st.info(
+            f"Projecting **{bt_result.portfolio_name}** forward from its final "
+            f"backtest value of **${float(bt_result.portfolio_value.iloc[-1]):,.0f}** "
+            f"(as of {bt_result.portfolio_value.index[-1].date()}). "
+            f"Run a new backtest in the Backtest view to change the source portfolio."
+        )
 
         col1, col2, col3 = st.columns(3)
         with col1:
