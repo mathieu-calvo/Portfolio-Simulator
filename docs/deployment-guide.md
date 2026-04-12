@@ -71,16 +71,21 @@ You should see "Success. No rows returned." — that means the table was created
 
 ## Step 4: Get your Supabase connection string
 
+> **CRITICAL:** Use the **Session pooler** connection string, NOT the Direct connection. Supabase's direct connection is IPv6-only and Streamlit Cloud doesn't support outbound IPv6 — you'll get `psycopg2.OperationalError` if you use it.
+
 1. In Supabase, click **Project Settings** (gear icon, bottom of left sidebar)
 2. Click **Database** in the left menu
 3. Scroll to **Connection string** section
-4. Select the **URI** tab
+4. Click the **Session pooler** tab (NOT Direct connection)
 5. You'll see something like:
    ```
-   postgresql://postgres:[YOUR-PASSWORD]@db.abcdefgh.supabase.co:5432/postgres
+   postgresql://postgres.abcdefgh:[YOUR-PASSWORD]@aws-0-eu-west-1.pooler.supabase.com:5432/postgres
    ```
+   (Note the hostname contains `pooler.supabase.com` and the username is `postgres.abcdefgh`)
 6. Replace `[YOUR-PASSWORD]` with the database password you chose in Step 2
 7. **Copy this full string** — you'll need it in Step 6
+
+> **Why session pooler, not transaction pooler?** Transaction pooler (port 6543) doesn't support prepared statements, which `psycopg2` uses. Session pooler (port 5432) is a drop-in replacement for the direct connection and works perfectly.
 
 ---
 
