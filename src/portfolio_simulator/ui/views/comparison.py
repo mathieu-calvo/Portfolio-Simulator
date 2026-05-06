@@ -102,7 +102,7 @@ def render() -> None:
             "Rebalancing frequency",
             [f.value for f in RebalanceFrequency],
             format_func=lambda x: x.replace("_", " ").title(),
-            disabled=rebal == "none",
+            disabled=rebal != "calendar",
             key="cmp_freq",
         )
         tol = st.slider(

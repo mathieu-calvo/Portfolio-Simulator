@@ -100,7 +100,7 @@ def render() -> None:
             "Rebalancing frequency",
             [f.value for f in RebalanceFrequency],
             format_func=lambda x: x.replace("_", " ").title(),
-            disabled=rebalance_strategy == "none",
+            disabled=rebalance_strategy != "calendar",
         )
         rebalance_tol = st.slider(
             "Rebalancing tolerance",
