@@ -169,13 +169,21 @@ def render() -> None:
             portfolio_evolution_chart,
             returns_heatmap,
             rolling_volatility_chart,
+            weight_drift_chart,
         )
         from portfolio_simulator.analytics.returns import monthly_returns
 
         render_metric_cards(result)
 
-        tab1, tab2, tab3, tab4, tab5 = st.tabs(
-            ["Evolution", "Drawdown", "Monthly Returns", "Returns Heatmap", "Rolling Volatility"]
+        tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
+            [
+                "Evolution",
+                "Drawdown",
+                "Weight Drift",
+                "Monthly Returns",
+                "Returns Heatmap",
+                "Rolling Volatility",
+            ]
         )
 
         with tab1:
@@ -189,18 +197,30 @@ def render() -> None:
                 width="stretch",
             )
         with tab3:
-            m_ret = monthly_returns(result.portfolio_value)
+            show_rebals = st.checkbox(
+                "Overlay rebalance dates",
+                value=True,
+                key="bt_wd_show_rebals",
+                help="Vertical dotted lines mark each rebalance — jumps in composition "
+                     "right at a line are due to the rebalance, anything else is drift.",
+            )
             st.plotly_chart(
-                monthly_returns_histogram(m_ret),
+                weight_drift_chart(result, show_rebalances=show_rebals),
                 width="stretch",
             )
         with tab4:
             m_ret = monthly_returns(result.portfolio_value)
             st.plotly_chart(
-                returns_heatmap(m_ret),
+                monthly_returns_histogram(m_ret),
                 width="stretch",
             )
         with tab5:
+            m_ret = monthly_returns(result.portfolio_value)
+            st.plotly_chart(
+                returns_heatmap(m_ret),
+                width="stretch",
+            )
+        with tab6:
             st.plotly_chart(
                 rolling_volatility_chart([result]),
                 width="stretch",
@@ -208,6 +228,16 @@ def render() -> None:
 
         # --- Raw Data Export ---
         _render_export_section(result, portfolio, data_service)
+
+
+def _weights_with_rebal_flag(result) -> "pd.DataFrame":
+    """Return the asset_weights_over_time DataFrame with a 'rebalance' boolean column."""
+    import pandas as pd
+
+    df = result.asset_weights_over_time.copy()
+    rebal_set = {pd.Timestamp(d).normalize() for d in result.rebalance_dates}
+    df["rebalance"] = pd.Index(df.index).normalize().isin(rebal_set)
+    return df
 
 
 def _render_export_section(result, portfolio, data_service) -> None:
@@ -223,8 +253,17 @@ def _render_export_section(result, portfolio, data_service) -> None:
             "them as Excel files for further analysis."
         )
 
-        data_tab1, data_tab2, data_tab3 = st.tabs(
-            ["Portfolio Time Series", "Asset Prices", "Asset Returns"]
+        show_full = st.checkbox(
+            "Show full table in previews",
+            value=False,
+            key="bt_export_show_full",
+            help="Off: previews show the last 250 rows. On: previews show every row "
+                 "(can be slow for very long backtests).",
+        )
+        preview = (lambda df: df) if show_full else (lambda df: df.tail(250))
+
+        data_tab1, data_tab2, data_tab3, data_tab4 = st.tabs(
+            ["Portfolio Time Series", "Asset Weights", "Asset Prices", "Asset Returns"]
         )
 
         # Portfolio-level outputs — always available from the result object
@@ -233,30 +272,58 @@ def _render_export_section(result, portfolio, data_service) -> None:
                 "portfolio_value": result.portfolio_value,
                 "daily_return": result.daily_returns,
             })
-            st.dataframe(portfolio_df.tail(250), use_container_width=True)
-            st.caption(f"Showing last 250 of {len(portfolio_df)} rows. Download full series below.")
+            st.dataframe(preview(portfolio_df), use_container_width=True)
+            if not show_full:
+                st.caption(f"Showing last 250 of {len(portfolio_df)} rows. Toggle above for full table.")
+            else:
+                st.caption(f"Showing all {len(portfolio_df)} rows.")
             download_excel_button(
                 label="Download portfolio time series (.xlsx)",
                 sheets={
                     "Portfolio Value": result.portfolio_value.to_frame("value"),
                     "Daily Returns": result.daily_returns.to_frame("return"),
-                    "Asset Weights": result.asset_weights_over_time,
+                    "Asset Weights": _weights_with_rebal_flag(result),
                 },
                 filename=f"{result.portfolio_name}_portfolio.xlsx",
                 key="bt_dl_portfolio",
                 help="Multi-sheet workbook: portfolio value, daily returns, and asset weight trajectories.",
             )
 
-        # Asset-level data — fetched from the cache via data_service
         with data_tab2:
+            weights_df = _weights_with_rebal_flag(result)
+            st.dataframe(preview(weights_df), use_container_width=True)
+            if not show_full:
+                st.caption(
+                    f"Showing last 250 of {len(weights_df)} rows. "
+                    f"`rebalance = True` flags days where the portfolio was rebalanced "
+                    f"to target weights ({len(result.rebalance_dates)} total)."
+                )
+            else:
+                st.caption(
+                    f"Showing all {len(weights_df)} rows. "
+                    f"{len(result.rebalance_dates)} rebalance days flagged."
+                )
+            download_excel_button(
+                label="Download asset weights (.xlsx)",
+                sheets={"Asset Weights": weights_df},
+                filename=f"{result.portfolio_name}_asset_weights.xlsx",
+                key="bt_dl_weights",
+                help="Daily actual weights per asset, with a boolean column flagging rebalance dates.",
+            )
+
+        # Asset-level data — fetched from the cache via data_service
+        with data_tab3:
             try:
                 prices = data_service.get_prices_bulk(
                     portfolio.tickers,
                     result.config.start_date,
                     result.config.end_date,
                 )
-                st.dataframe(prices.tail(250), use_container_width=True)
-                st.caption(f"Showing last 250 of {len(prices)} rows. Download full series below.")
+                st.dataframe(preview(prices), use_container_width=True)
+                if not show_full:
+                    st.caption(f"Showing last 250 of {len(prices)} rows. Toggle above for full table.")
+                else:
+                    st.caption(f"Showing all {len(prices)} rows.")
                 download_excel_button(
                     label="Download asset prices (.xlsx)",
                     sheets={"Asset Prices": prices},
@@ -267,7 +334,7 @@ def _render_export_section(result, portfolio, data_service) -> None:
             except Exception as e:
                 st.error(f"Could not load asset prices: {e}")
 
-        with data_tab3:
+        with data_tab4:
             try:
                 prices = data_service.get_prices_bulk(
                     portfolio.tickers,
@@ -275,8 +342,11 @@ def _render_export_section(result, portfolio, data_service) -> None:
                     result.config.end_date,
                 )
                 returns = prices.pct_change().dropna(how="all")
-                st.dataframe(returns.tail(250), use_container_width=True)
-                st.caption(f"Showing last 250 of {len(returns)} rows. Download full series below.")
+                st.dataframe(preview(returns), use_container_width=True)
+                if not show_full:
+                    st.caption(f"Showing last 250 of {len(returns)} rows. Toggle above for full table.")
+                else:
+                    st.caption(f"Showing all {len(returns)} rows.")
                 download_excel_button(
                     label="Download asset returns (.xlsx)",
                     sheets={"Asset Returns": returns},

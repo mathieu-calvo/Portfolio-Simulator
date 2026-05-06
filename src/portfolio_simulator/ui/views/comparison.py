@@ -52,14 +52,12 @@ def render() -> None:
               a portfolio's edge is recent or durable.
             - **Drawdown:** Drawdown curves overlaid — the shallower the drawdowns, the
               better the downside protection.
+            - **Weight Drift:** Stacked area per portfolio with rebalance dates marked,
+              so you can see how each portfolio's composition evolved.
 
-            **How to interpret:**
-            - A higher annualized return isn't better if it comes with disproportionately
-              more volatility. Use the **Sharpe ratio** to compare risk-adjusted returns.
-            - A portfolio with lower max drawdown may be preferable for investors with
-              lower risk tolerance, even at a small cost to return.
-            - The multi-horizon view reveals whether a "winner" is consistent across
-              market regimes or just benefited from a single strong period.
+            **Align start dates:** When portfolios have different price-history depths,
+            tick "Align start dates" to truncate everyone to the latest common start and
+            rebase to the initial investment — better for fair visual comparison.
             """
         )
 
@@ -71,9 +69,14 @@ def render() -> None:
         st.info("Save at least 2 portfolios to compare. Go to Portfolio Builder.")
         return
 
-    # --- Select Portfolios ---
+    # --- Select Portfolios (persisted via key="cmp_selected") ---
     names = [p.name for p in portfolios]
-    selected = st.multiselect("Select portfolios to compare (2-5)", names, max_selections=5)
+    selected = st.multiselect(
+        "Select portfolios to compare (2-5)",
+        names,
+        max_selections=5,
+        key="cmp_selected",
+    )
 
     if len(selected) < 2:
         st.info("Select at least 2 portfolios.")
@@ -90,16 +93,23 @@ def render() -> None:
         initial = st.number_input("Initial investment ($)", value=10000, min_value=0, step=1000, key="cmp_init")
     with col2:
         rebal = st.selectbox(
-            "Rebalancing",
+            "Rebalancing strategy",
             [s.value for s in RebalanceStrategy],
             format_func=lambda x: x.replace("_", " ").title(),
             key="cmp_rebal",
         )
         freq = st.selectbox(
-            "Frequency",
+            "Rebalancing frequency",
             [f.value for f in RebalanceFrequency],
             format_func=lambda x: x.replace("_", " ").title(),
+            disabled=rebal == "none",
             key="cmp_freq",
+        )
+        tol = st.slider(
+            "Rebalancing tolerance",
+            0.01, 0.50, 0.05, 0.01,
+            disabled=rebal != "tolerance",
+            key="cmp_tol",
         )
 
     config = SimulationConfig(
@@ -108,6 +118,7 @@ def render() -> None:
         initial_investment=float(initial),
         rebalance_strategy=rebal,
         rebalance_frequency=freq,
+        rebalance_tolerance=tol,
     )
 
     # --- Run ---
@@ -124,37 +135,76 @@ def render() -> None:
     if "comparison_results" in st.session_state:
         results = st.session_state.comparison_results
 
+        from portfolio_simulator.analytics.comparison import align_results
         from portfolio_simulator.visualization.charts import (
             drawdown_chart,
             portfolio_evolution_chart,
-            rolling_volatility_chart,
+            weight_drift_comparison_chart,
         )
         from portfolio_simulator.visualization.tables import (
             multi_horizon_table,
             summary_stats_table,
         )
 
-        tab1, tab2, tab3, tab4 = st.tabs(
-            ["Evolution", "Summary", "Multi-Horizon", "Drawdown"]
+        # Detect mismatched start dates and offer alignment
+        first_dates = [r.portfolio_value.index[0] for r in results]
+        starts_differ = len(set(first_dates)) > 1
+        if starts_differ:
+            st.info(
+                "Portfolios have different first available dates — toggle "
+                "**Align start dates** below for a like-for-like visual comparison."
+            )
+        align = st.checkbox(
+            "Align start dates (truncate to latest common start, rebase to initial investment)",
+            value=False,
+            key="cmp_align",
+            disabled=not starts_differ,
+        )
+        display_results = align_results(results) if align else results
+
+        tab1, tab2, tab3, tab4, tab5 = st.tabs(
+            ["Evolution", "Summary", "Multi-Horizon", "Drawdown", "Weight Drift"]
         )
 
         with tab1:
             st.plotly_chart(
-                portfolio_evolution_chart(results),
+                portfolio_evolution_chart(display_results),
                 width="stretch",
             )
         with tab2:
-            st.dataframe(summary_stats_table(results), width="stretch")
+            st.dataframe(summary_stats_table(display_results), width="stretch")
         with tab3:
-            st.dataframe(multi_horizon_table(results), width="stretch")
+            st.dataframe(multi_horizon_table(display_results), width="stretch")
         with tab4:
             st.plotly_chart(
-                drawdown_chart(results),
+                drawdown_chart(display_results),
+                width="stretch",
+            )
+        with tab5:
+            show_rebals = st.checkbox(
+                "Overlay rebalance dates",
+                value=True,
+                key="cmp_wd_show_rebals",
+                help="Vertical dotted lines mark each rebalance per portfolio. Same color "
+                     "= same ticker across subplots.",
+            )
+            st.plotly_chart(
+                weight_drift_comparison_chart(display_results, show_rebalances=show_rebals),
                 width="stretch",
             )
 
         # --- Raw Data Export ---
-        _render_export_section(results, selected_portfolios, data_service)
+        _render_export_section(display_results, selected_portfolios, data_service)
+
+
+def _weights_with_rebal_flag(result) -> "pd.DataFrame":
+    """Return a result's weights DataFrame with a 'rebalance' boolean column."""
+    import pandas as pd
+
+    df = result.asset_weights_over_time.copy()
+    rebal_set = {pd.Timestamp(d).normalize() for d in result.rebalance_dates}
+    df["rebalance"] = pd.Index(df.index).normalize().isin(rebal_set)
+    return df
 
 
 def _render_export_section(results, selected_portfolios, data_service) -> None:
@@ -170,20 +220,29 @@ def _render_export_section(results, selected_portfolios, data_service) -> None:
             "them as Excel files for further analysis."
         )
 
-        # Build a combined DataFrame with one column per portfolio
-        values_df = pd.DataFrame(
-            {r.portfolio_name: r.portfolio_value for r in results}
+        show_full = st.checkbox(
+            "Show full table in previews",
+            value=False,
+            key="cmp_export_show_full",
+            help="Off: previews show the last 250 rows. On: previews show every row.",
         )
-        returns_df = pd.DataFrame(
-            {r.portfolio_name: r.daily_returns for r in results}
-        )
+        preview = (lambda df: df) if show_full else (lambda df: df.tail(250))
 
-        data_tab1, data_tab2 = st.tabs(["Portfolio Values & Returns", "Asset Prices"])
+        # Build combined value/return DataFrames
+        values_df = pd.DataFrame({r.portfolio_name: r.portfolio_value for r in results})
+        returns_df = pd.DataFrame({r.portfolio_name: r.daily_returns for r in results})
+
+        data_tab1, data_tab2, data_tab3 = st.tabs(
+            ["Portfolio Values & Returns", "Asset Weights", "Asset Prices"]
+        )
 
         with data_tab1:
             st.markdown("**Portfolio Values**")
-            st.dataframe(values_df.tail(250), use_container_width=True)
-            st.caption(f"Showing last 250 of {len(values_df)} rows. Download full series below.")
+            st.dataframe(preview(values_df), use_container_width=True)
+            if not show_full:
+                st.caption(f"Showing last 250 of {len(values_df)} rows. Toggle above for full table.")
+            else:
+                st.caption(f"Showing all {len(values_df)} rows.")
 
             download_excel_button(
                 label="Download comparison time series (.xlsx)",
@@ -198,20 +257,39 @@ def _render_export_section(results, selected_portfolios, data_service) -> None:
 
         with data_tab2:
             st.caption(
+                "Daily actual weights for each portfolio, with a `rebalance` boolean "
+                "column flagging the days a rebalance fired."
+            )
+            sheets: dict[str, pd.DataFrame] = {}
+            for r in results:
+                weights_df = _weights_with_rebal_flag(r)
+                sheets[f"{r.portfolio_name} Weights"] = weights_df
+                with st.expander(f"Preview: {r.portfolio_name} ({len(r.rebalance_dates)} rebalances)"):
+                    st.dataframe(preview(weights_df), use_container_width=True)
+
+            download_excel_button(
+                label="Download all asset weights (.xlsx)",
+                sheets=sheets,
+                filename="comparison_asset_weights.xlsx",
+                key="cmp_dl_weights",
+                help="One sheet per portfolio with actual daily weights and a rebalance flag.",
+            )
+
+        with data_tab3:
+            st.caption(
                 "Asset-level prices for every portfolio in the comparison, fetched "
                 "from the selected data source (cached)."
             )
             try:
-                # Get the config from the first result (all share the same config)
                 cfg = results[0].config
-                sheets: dict[str, pd.DataFrame] = {}
+                sheets = {}
                 for portfolio in selected_portfolios:
                     prices = data_service.get_prices_bulk(
                         portfolio.tickers, cfg.start_date, cfg.end_date
                     )
                     sheets[f"{portfolio.name} Prices"] = prices
                     with st.expander(f"Preview: {portfolio.name}"):
-                        st.dataframe(prices.tail(100), use_container_width=True)
+                        st.dataframe(preview(prices), use_container_width=True)
 
                 download_excel_button(
                     label="Download all asset prices (.xlsx)",

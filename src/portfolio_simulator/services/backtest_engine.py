@@ -84,6 +84,7 @@ class BacktestEngine:
         current_value = config.initial_investment
         current_weights = target_weights.copy()
         returns_arr = returns_df.values  # (n_days, n_assets)
+        actual_rebalance_dates: list = []
 
         # TER daily drag per asset
         if config.include_ter:
@@ -163,6 +164,7 @@ class BacktestEngine:
 
                 new_value -= tx_cost
                 current_weights = target_weights.copy()
+                actual_rebalance_dates.append(dt)
 
             # Store
             portfolio_values[i] = new_value
@@ -178,7 +180,7 @@ class BacktestEngine:
         )
 
         rebalance_dates_list = sorted(
-            d.date() if hasattr(d, "date") else d for d in rebalance_set if d in dates
+            d.date() if hasattr(d, "date") else d for d in actual_rebalance_dates
         )
 
         return BacktestResult(

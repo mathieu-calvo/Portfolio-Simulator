@@ -271,6 +271,120 @@ def monte_carlo_chart(
     return fig
 
 
+def weight_drift_chart(
+    result: BacktestResult,
+    show_rebalances: bool = True,
+    title: str = "Weight Drift Over Time",
+) -> go.Figure:
+    """Stacked area chart showing actual asset weights drifting between rebalances.
+
+    Vertical dotted lines mark rebalance dates so the user can see when a jump
+    in composition was caused by a rebalance vs. market movement.
+    """
+    fig = go.Figure()
+    weights = result.asset_weights_over_time
+
+    for i, ticker in enumerate(weights.columns):
+        fig.add_trace(
+            go.Scatter(
+                x=weights.index,
+                y=weights[ticker],
+                name=ticker,
+                mode="lines",
+                stackgroup="one",
+                line=dict(width=0.5, color=get_color(i)),
+                hovertemplate=f"{ticker}: %{{y:.1%}}<extra></extra>",
+            )
+        )
+
+    if show_rebalances and result.rebalance_dates:
+        for rd in result.rebalance_dates:
+            fig.add_vline(
+                x=pd.Timestamp(rd),
+                line_dash="dot",
+                line_color="rgba(0,0,0,0.4)",
+                line_width=1,
+            )
+
+    fig.update_layout(
+        title=title,
+        yaxis_title="Weight",
+        yaxis_tickformat=".0%",
+        yaxis_range=[0, 1],
+    )
+    return fig
+
+
+def weight_drift_comparison_chart(
+    results: list[BacktestResult],
+    show_rebalances: bool = True,
+    title: str = "Weight Drift — Side by Side",
+) -> go.Figure:
+    """Stacked area subplots, one row per portfolio, sharing the x-axis.
+
+    Same color is used for the same ticker across portfolios so the eye can
+    track shared holdings. Vertical dotted lines mark rebalance dates per row.
+    """
+    from plotly.subplots import make_subplots
+
+    n = len(results)
+    if n == 0:
+        return go.Figure()
+
+    # Consistent color per ticker across all subplots
+    all_tickers = sorted({t for r in results for t in r.asset_weights_over_time.columns})
+    color_map = {t: get_color(i) for i, t in enumerate(all_tickers)}
+
+    fig = make_subplots(
+        rows=n,
+        cols=1,
+        shared_xaxes=True,
+        subplot_titles=[r.portfolio_name for r in results],
+        vertical_spacing=0.08,
+    )
+
+    legend_seen: set[str] = set()
+    for ri, r in enumerate(results):
+        weights = r.asset_weights_over_time
+        for ticker in weights.columns:
+            show_legend = ticker not in legend_seen
+            legend_seen.add(ticker)
+            fig.add_trace(
+                go.Scatter(
+                    x=weights.index,
+                    y=weights[ticker],
+                    name=ticker,
+                    mode="lines",
+                    stackgroup=f"row{ri}",
+                    line=dict(width=0.5, color=color_map[ticker]),
+                    legendgroup=ticker,
+                    showlegend=show_legend,
+                    hovertemplate=f"{ticker}: %{{y:.1%}}<extra></extra>",
+                ),
+                row=ri + 1,
+                col=1,
+            )
+
+        if show_rebalances and r.rebalance_dates:
+            for rd in r.rebalance_dates:
+                fig.add_vline(
+                    x=pd.Timestamp(rd),
+                    line_dash="dot",
+                    line_color="rgba(0,0,0,0.4)",
+                    line_width=1,
+                    row=ri + 1,
+                    col=1,
+                )
+
+        fig.update_yaxes(tickformat=".0%", range=[0, 1], row=ri + 1, col=1)
+
+    fig.update_layout(
+        title=title,
+        height=260 * n + 80,
+    )
+    return fig
+
+
 def rolling_volatility_chart(
     results: list[BacktestResult],
     window_days: int = 63,

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pandas as pd
 
 from portfolio_simulator.analytics.ratios import calmar_ratio, sharpe_ratio, sortino_ratio
@@ -16,6 +18,43 @@ from portfolio_simulator.analytics.risk import (
     value_at_risk,
 )
 from portfolio_simulator.domain.results import BacktestResult
+
+
+def align_results(results: list[BacktestResult]) -> list[BacktestResult]:
+    """Truncate and renormalize results to a common start date.
+
+    For visual comparison: drops history before the latest first-trading-date
+    across all results, then rescales each portfolio_value so it starts at the
+    initial investment again. Daily returns, weights, and rebalance dates are
+    all sliced to the same window.
+    """
+    if not results:
+        return results
+
+    common_start = max(r.portfolio_value.index[0] for r in results)
+    aligned: list[BacktestResult] = []
+    for r in results:
+        v = r.portfolio_value[r.portfolio_value.index >= common_start]
+        if v.empty or len(v) < 2:
+            aligned.append(r)
+            continue
+        scale = float(r.config.initial_investment) / float(v.iloc[0])
+        v_norm = v * scale
+        v_norm.name = r.portfolio_value.name
+        ret = v_norm.pct_change().fillna(0)
+        ret.name = r.daily_returns.name
+        weights = r.asset_weights_over_time[r.asset_weights_over_time.index >= common_start]
+        rebal = tuple(d for d in r.rebalance_dates if pd.Timestamp(d) >= common_start)
+        aligned.append(
+            replace(
+                r,
+                portfolio_value=v_norm,
+                daily_returns=ret,
+                asset_weights_over_time=weights,
+                rebalance_dates=rebal,
+            )
+        )
+    return aligned
 
 
 def comparison_table(results: list[BacktestResult]) -> pd.DataFrame:
