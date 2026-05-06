@@ -38,7 +38,7 @@ def generate_rebalance_dates(
         "monthly": "BME",
         "quarterly": "BQE",
         "semi_annually": "6BME",
-        "annually": "BAE",
+        "annually": "BYE",
     }
     if frequency not in freq_map:
         raise ValueError(f"Unknown frequency: {frequency}. Must be one of {list(freq_map)}")
