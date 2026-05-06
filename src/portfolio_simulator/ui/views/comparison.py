@@ -71,11 +71,14 @@ def render() -> None:
 
     # --- Select Portfolios ---
     # Streamlit auto-purges keyed widget state when the widget unmounts (e.g.
-    # navigating to a different page), so we mirror the selection into a
-    # non-widget key and rehydrate the widget's key from it on every entry.
+    # navigating to a different page). Mirror the selection into a non-widget
+    # key and only rehydrate when cmp_selected is missing — otherwise we'd
+    # clobber the user's in-flight changes on every rerun.
     names = [p.name for p in portfolios]
-    persisted = [n for n in st.session_state.get("cmp_selected_persistent", []) if n in names]
-    st.session_state["cmp_selected"] = persisted
+    if "cmp_selected" not in st.session_state:
+        st.session_state["cmp_selected"] = [
+            n for n in st.session_state.get("cmp_selected_persistent", []) if n in names
+        ]
     selected = st.multiselect(
         "Select portfolios to compare (2-5)",
         names,
