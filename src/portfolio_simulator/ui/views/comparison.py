@@ -69,14 +69,20 @@ def render() -> None:
         st.info("Save at least 2 portfolios to compare. Go to Portfolio Builder.")
         return
 
-    # --- Select Portfolios (persisted via key="cmp_selected") ---
+    # --- Select Portfolios ---
+    # Streamlit auto-purges keyed widget state when the widget unmounts (e.g.
+    # navigating to a different page), so we mirror the selection into a
+    # non-widget key and rehydrate the widget's key from it on every entry.
     names = [p.name for p in portfolios]
+    persisted = [n for n in st.session_state.get("cmp_selected_persistent", []) if n in names]
+    st.session_state["cmp_selected"] = persisted
     selected = st.multiselect(
         "Select portfolios to compare (2-5)",
         names,
         max_selections=5,
         key="cmp_selected",
     )
+    st.session_state["cmp_selected_persistent"] = selected
 
     if len(selected) < 2:
         st.info("Select at least 2 portfolios.")
