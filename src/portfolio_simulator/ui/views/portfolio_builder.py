@@ -8,7 +8,7 @@ from portfolio_simulator.domain.asset import Asset
 from portfolio_simulator.domain.enums import AssetType, Currency
 from portfolio_simulator.domain.portfolio import Portfolio, PortfolioAllocation
 from portfolio_simulator.ui.components.asset_picker import asset_search
-from portfolio_simulator.ui.components.weight_editor import weight_editor
+from portfolio_simulator.ui.components.weight_editor import clear_weight_state, weight_editor
 
 
 def _get_provider():
@@ -94,13 +94,18 @@ def render() -> None:
             if st.button("Add to Portfolio", type="primary", use_container_width=True):
                 existing = {a["ticker"] for a in st.session_state.builder_assets}
                 if pending.ticker not in existing:
+                    existing_total = sum(a.get("weight", 0.0) for a in st.session_state.builder_assets)
+                    default_weight = max(0.0, 1.0 - existing_total)
+                    # Drop any stale widget state from a prior add/remove cycle
+                    # so the editor seeds from default_weight, not the old value.
+                    clear_weight_state(pending.ticker)
                     st.session_state.builder_assets.append({
                         "ticker": pending.ticker,
                         "name": pending.name,
                         "asset_type": pending.asset_type.value,
                         "currency": pending.currency,
                         "ter": pending.ter or 0.0,
-                        "weight": 0.0,
+                        "weight": default_weight,
                     })
                     del st.session_state["pending_asset"]
                     st.rerun()
@@ -124,6 +129,7 @@ def render() -> None:
             key="remove_asset",
         )
         if to_remove != "-- None --" and st.button("Remove"):
+            clear_weight_state(to_remove)
             st.session_state.builder_assets = [a for a in updated if a["ticker"] != to_remove]
             st.rerun()
 
