@@ -8,6 +8,7 @@ import streamlit as st
 
 from portfolio_simulator.domain.enums import RebalanceFrequency, RebalanceStrategy
 from portfolio_simulator.domain.simulation import SimulationConfig
+from portfolio_simulator.utils.currency import currency_symbol
 
 
 def _get_services():
@@ -48,8 +49,8 @@ def render() -> None:
             - **Summary:** Full comparison table with all key metrics (returns,
               volatility, Sharpe, drawdown, etc.).
             - **Multi-Horizon:** Returns and volatility broken out by standard lookback
-              windows (YTD, 1Y, 3Y, 5Y, 10Y, full period). Useful for spotting whether
-              a portfolio's edge is recent or durable.
+              windows (YTD, 1Y, 3Y, 5Y, 10Y, full period), plus a calendar-year returns
+              table. Useful for spotting whether a portfolio's edge is recent or durable.
             - **Drawdown:** Drawdown curves overlaid — the shallower the drawdowns, the
               better the downside protection.
             - **Weight Drift:** Stacked area per portfolio with rebalance dates marked,
@@ -92,6 +93,14 @@ def render() -> None:
         return
 
     selected_portfolios = [p for p in portfolios if p.name in selected]
+    currencies = {p.base_currency.value for p in selected_portfolios}
+    shared_ccy = next(iter(currencies)) if len(currencies) == 1 else None
+    sym = currency_symbol(shared_ccy)
+    if shared_ccy is None and len(currencies) > 1:
+        st.caption(
+            "Selected portfolios use different base currencies — the initial "
+            "investment below is interpreted in each portfolio's own currency."
+        )
 
     # --- Shared Config ---
     st.subheader("Simulation Parameters")
@@ -99,7 +108,10 @@ def render() -> None:
     with col1:
         start_date = st.date_input("Start date", value=date(2015, 1, 1), key="cmp_start")
         end_date = st.date_input("End date", value=date.today() - timedelta(days=1), key="cmp_end")
-        initial = st.number_input("Initial investment ($)", value=10000, min_value=0, step=1000, key="cmp_init")
+        initial = st.number_input(
+            f"Initial investment ({sym.strip() or '$'})",
+            value=10000, min_value=0, step=1000, key="cmp_init",
+        )
     with col2:
         rebal = st.selectbox(
             "Rebalancing strategy",
@@ -151,6 +163,7 @@ def render() -> None:
             weight_drift_comparison_chart,
         )
         from portfolio_simulator.visualization.tables import (
+            calendar_year_returns_table,
             multi_horizon_table,
             summary_stats_table,
         )
@@ -183,7 +196,20 @@ def render() -> None:
         with tab2:
             st.dataframe(summary_stats_table(display_results), width="stretch")
         with tab3:
+            st.markdown("**Standard horizons**")
+            st.caption(
+                "Annualized and cumulative returns plus annualized volatility for each "
+                "portfolio across the standard lookback windows."
+            )
             st.dataframe(multi_horizon_table(display_results), width="stretch")
+            st.markdown("**Calendar year returns**")
+            st.caption(
+                "Total return for each calendar year. Partial years (the first and "
+                "last in the backtest window) reflect only the days actually covered."
+            )
+            st.dataframe(
+                calendar_year_returns_table(display_results), width="stretch"
+            )
         with tab4:
             st.plotly_chart(
                 drawdown_chart(display_results),

@@ -21,10 +21,13 @@ def asset_search(
         if not query or len(query) < 1:
             return []
         results = provider.search_assets(query, limit=10)
-        return [
-            (f"{a.ticker} - {a.name} ({a.asset_type.value})", a)
-            for a in results
-        ]
+        out: list[tuple[str, AssetInfo]] = []
+        for a in results:
+            label = f"{a.ticker} - {a.name} ({a.asset_type.value})"
+            if a.first_trade_date is not None:
+                label += f" — since {a.first_trade_date.isoformat()}"
+            out.append((label, a))
+        return out
 
     selected: AssetInfo | None = st_searchbox(
         _search,

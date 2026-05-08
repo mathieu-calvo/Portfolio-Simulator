@@ -7,11 +7,11 @@ from datetime import date, timedelta
 import streamlit as st
 
 from portfolio_simulator.domain.enums import (
-    InvestmentStrategy,
     RebalanceFrequency,
     RebalanceStrategy,
 )
 from portfolio_simulator.domain.simulation import SimulationConfig
+from portfolio_simulator.utils.currency import currency_symbol
 
 
 def _get_services():
@@ -78,6 +78,8 @@ def render() -> None:
     portfolio_names = [p.name for p in portfolios]
     selected_name = st.selectbox("Select portfolio", portfolio_names)
     portfolio = next(p for p in portfolios if p.name == selected_name)
+    base_ccy = portfolio.base_currency.value
+    sym = currency_symbol(base_ccy)
 
     # --- Configuration ---
     st.subheader("Simulation Parameters")
@@ -87,7 +89,8 @@ def render() -> None:
         start_date = st.date_input("Start date", value=date(2015, 1, 1))
         end_date = st.date_input("End date", value=date.today() - timedelta(days=1))
         initial_investment = st.number_input(
-            "Initial investment ($)", value=10000, min_value=0, step=1000
+            f"Initial investment ({sym.strip() or '$'})",
+            value=10000, min_value=0, step=1000,
         )
 
     with col2:
@@ -111,15 +114,15 @@ def render() -> None:
     with st.expander("Advanced Settings"):
         col3, col4 = st.columns(2)
         with col3:
-            investment_strategy = st.selectbox(
-                "Investment strategy",
-                [s.value for s in InvestmentStrategy],
-                format_func=lambda x: x.replace("_", " ").title(),
-            )
             recurring = st.number_input(
-                "Monthly contribution ($)",
-                value=0, min_value=0, step=100,
-                disabled=investment_strategy == "lump_sum",
+                f"Monthly contribution / withdrawal ({sym.strip() or '$'})",
+                value=0,
+                step=100,
+                help=(
+                    "Applied at month-end on top of the initial lump sum. "
+                    "Positive = contribution, negative = withdrawal. "
+                    "Set to 0 for a pure lump-sum backtest."
+                ),
             )
         with col4:
             transaction_cost = st.number_input(
@@ -140,7 +143,6 @@ def render() -> None:
             end_date=end_date,
             initial_investment=float(initial_investment),
             recurring_investment=float(recurring),
-            investment_strategy=investment_strategy,
             rebalance_strategy=rebalance_strategy,
             rebalance_frequency=rebalance_freq,
             rebalance_tolerance=rebalance_tol,

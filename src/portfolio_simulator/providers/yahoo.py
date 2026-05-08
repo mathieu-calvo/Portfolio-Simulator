@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 import pandas as pd
 import yfinance as yf
@@ -12,6 +12,27 @@ from portfolio_simulator.domain.enums import AssetType
 from portfolio_simulator.providers.base import AssetInfo
 
 logger = logging.getLogger(__name__)
+
+
+def _first_trade_from_quote(q: dict) -> date | None:
+    """Best-effort extraction of an asset's first-trade date from a Yahoo quote dict.
+
+    Yahoo's search payload exposes the inception either as
+    `firstTradeDateMilliseconds` (newer) or `firstTradeDateEpochUtc` (seconds).
+    """
+    raw_ms = q.get("firstTradeDateMilliseconds")
+    if raw_ms is not None:
+        try:
+            return datetime.fromtimestamp(int(raw_ms) / 1000, tz=timezone.utc).date()
+        except (TypeError, ValueError, OSError):
+            return None
+    raw_s = q.get("firstTradeDateEpochUtc")
+    if raw_s is not None:
+        try:
+            return datetime.fromtimestamp(int(raw_s), tz=timezone.utc).date()
+        except (TypeError, ValueError, OSError):
+            return None
+    return None
 
 # Map yfinance quoteType to our AssetType
 _QUOTE_TYPE_MAP = {
@@ -82,6 +103,7 @@ class YahooFinanceProvider:
                     asset_type=at,
                     currency=q.get("currency", "USD"),
                     exchange=q.get("exchange"),
+                    first_trade_date=_first_trade_from_quote(q),
                 )
             )
         return assets[:limit]
@@ -97,6 +119,7 @@ class YahooFinanceProvider:
             ter=info.get("annualReportExpenseRatio"),
             exchange=info.get("exchange"),
             isin=info.get("isin"),
+            first_trade_date=_first_trade_from_quote(info),
         )
 
     def get_fx_rates(

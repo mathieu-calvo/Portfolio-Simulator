@@ -17,7 +17,10 @@ class SimulationConfig(BaseModel):
     start_date: date
     end_date: date
     initial_investment: float = Field(default=10_000.0, ge=0.0)
-    recurring_investment: float = Field(default=0.0, ge=0.0, description="Monthly DCA amount")
+    recurring_investment: float = Field(
+        default=0.0,
+        description="Monthly cashflow — positive = contribution, negative = withdrawal",
+    )
     investment_strategy: InvestmentStrategy = InvestmentStrategy.LUMP_SUM
     rebalance_strategy: RebalanceStrategy = RebalanceStrategy.NONE
     rebalance_frequency: RebalanceFrequency = RebalanceFrequency.QUARTERLY

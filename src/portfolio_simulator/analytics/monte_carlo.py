@@ -56,8 +56,8 @@ def run_monte_carlo(
     for i in range(n_days):
         daily_factor = np.exp(random_log_returns[i])
         values[i + 1] = values[i] * daily_factor
-        # Add monthly contribution
-        if monthly_contribution > 0 and (i + 1) % contrib_interval == 0:
+        # Apply monthly cashflow (positive = contribution, negative = withdrawal)
+        if monthly_contribution != 0 and (i + 1) % contrib_interval == 0:
             values[i + 1] += monthly_contribution
 
     # Build time index (business days starting from tomorrow-ish)

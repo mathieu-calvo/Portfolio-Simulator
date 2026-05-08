@@ -6,6 +6,8 @@ from datetime import date, timedelta
 
 import streamlit as st
 
+from portfolio_simulator.utils.currency import currency_symbol
+
 
 def _get_services():
     from portfolio_simulator.services import get_data_service, get_portfolio_store
@@ -14,6 +16,11 @@ def _get_services():
     data_service = get_data_service(provider_name)
     store = get_portfolio_store()
     return data_service, store
+
+
+def _result_currency(bt_result) -> str:
+    """Best-effort currency code for a backtest result."""
+    return getattr(bt_result, "base_currency", None) or "USD"
 
 
 def render() -> None:
@@ -160,8 +167,8 @@ def render() -> None:
                   it cannot predict regime changes, crises, or structural shifts.
                 - Daily returns are sampled independently, so some autocorrelation and
                   volatility clustering present in real markets is lost.
-                - The projection starts from the **final value** of the backtest, not
-                  today's market price.
+                - The projection starts from the **start value** you set below — by
+                  default, the initial investment used in the backtest.
                 """
             )
 
@@ -172,23 +179,37 @@ def render() -> None:
         from portfolio_simulator.domain.results import BacktestResult
 
         bt_result: BacktestResult = st.session_state.backtest_result
+        sym = currency_symbol(_result_currency(bt_result))
 
         # Make the input portfolio explicit — users were confused about which
         # portfolio the projection was based on.
         st.info(
-            f"Projecting **{bt_result.portfolio_name}** forward from its final "
-            f"backtest value of **${float(bt_result.portfolio_value.iloc[-1]):,.0f}** "
-            f"(as of {bt_result.portfolio_value.index[-1].date()}). "
+            f"Projecting **{bt_result.portfolio_name}** using its return distribution "
+            f"from {bt_result.config.start_date} to "
+            f"{bt_result.portfolio_value.index[-1].date()}. "
             f"Run a new backtest in the Backtest view to change the source portfolio."
         )
 
-        col1, col2, col3 = st.columns(3)
+        col1, col2 = st.columns(2)
         with col1:
             n_years = st.slider("Projection horizon (years)", 1, 30, 10, key="mc_years")
+            start_value = st.number_input(
+                f"Start value ({sym.strip() or '$'})",
+                min_value=0.0,
+                value=float(bt_result.config.initial_investment),
+                step=1000.0,
+                key="mc_start_value",
+                help="Defaults to the initial investment used in the backtest.",
+            )
         with col2:
             n_scenarios = st.number_input("Number of scenarios", 1000, 50000, 5000, step=1000, key="mc_n")
-        with col3:
-            monthly_contrib = st.number_input("Monthly contribution ($)", 0, 10000, 0, step=100, key="mc_contrib")
+            monthly_contrib = st.number_input(
+                f"Monthly contribution / withdrawal ({sym.strip() or '$'})",
+                value=0,
+                step=100,
+                key="mc_contrib",
+                help="Positive = contribution, negative = withdrawal.",
+            )
 
         if st.button("Run Monte Carlo", type="primary"):
             with st.spinner(f"Running {n_scenarios} scenarios..."):
@@ -200,7 +221,7 @@ def render() -> None:
                         bt_result.daily_returns,
                         n_scenarios=n_scenarios,
                         n_years=n_years,
-                        initial_value=float(bt_result.portfolio_value.iloc[-1]),
+                        initial_value=float(start_value),
                         monthly_contribution=float(monthly_contrib),
                     )
                     st.session_state.mc_result = mc_result
@@ -212,12 +233,14 @@ def render() -> None:
             mc_result = st.session_state.mc_result
             from portfolio_simulator.visualization.charts import monte_carlo_chart
 
-            st.plotly_chart(monte_carlo_chart(mc_result), width="stretch")
+            st.plotly_chart(
+                monte_carlo_chart(mc_result, currency=_result_currency(bt_result)),
+                width="stretch",
+            )
 
             col1, col2, col3, col4, col5 = st.columns(5)
-            final = mc_result.all_scenarios.iloc[-1]
-            col1.metric("P5 (Very Bad)", f"${mc_result.percentile_5.iloc[-1]:,.0f}")
-            col2.metric("P25 (Bad)", f"${mc_result.percentile_25.iloc[-1]:,.0f}")
-            col3.metric("Median", f"${mc_result.median.iloc[-1]:,.0f}")
-            col4.metric("P75 (Good)", f"${mc_result.percentile_75.iloc[-1]:,.0f}")
-            col5.metric("P95 (Great)", f"${mc_result.percentile_95.iloc[-1]:,.0f}")
+            col1.metric("P5 (Very Bad)", f"{sym}{mc_result.percentile_5.iloc[-1]:,.0f}")
+            col2.metric("P25 (Bad)", f"{sym}{mc_result.percentile_25.iloc[-1]:,.0f}")
+            col3.metric("Median", f"{sym}{mc_result.median.iloc[-1]:,.0f}")
+            col4.metric("P75 (Good)", f"{sym}{mc_result.percentile_75.iloc[-1]:,.0f}")
+            col5.metric("P95 (Great)", f"{sym}{mc_result.percentile_95.iloc[-1]:,.0f}")

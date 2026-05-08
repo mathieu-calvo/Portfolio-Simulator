@@ -24,6 +24,7 @@ class BacktestResult:
     total_invested: float = 0.0
     total_fees_paid: float = 0.0
     total_taxes_paid: float = 0.0
+    base_currency: str = "USD"
 
 
 @dataclass(frozen=True)

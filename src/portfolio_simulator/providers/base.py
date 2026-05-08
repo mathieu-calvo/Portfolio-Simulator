@@ -22,6 +22,7 @@ class AssetInfo:
     ter: float | None = None
     exchange: str | None = None
     isin: str | None = None
+    first_trade_date: date | None = None
 
 
 @runtime_checkable

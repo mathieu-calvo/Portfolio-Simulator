@@ -22,6 +22,41 @@ def _get_store():
     return get_portfolio_store()
 
 
+def _portfolio_to_builder_assets(portfolio: Portfolio) -> list[dict]:
+    """Convert a saved Portfolio into the dict-shape the weight editor expects."""
+    return [
+        {
+            "ticker": a.asset.ticker,
+            "name": a.asset.name,
+            "asset_type": a.asset.asset_type.value,
+            "currency": a.asset.currency.value,
+            "ter": a.asset.ter or 0.0,
+            "weight": a.weight,
+        }
+        for a in portfolio.allocations
+    ]
+
+
+def _load_into_builder(portfolio: Portfolio, *, new_name: str, editing: bool) -> None:
+    """Hydrate the builder session state from an existing portfolio.
+
+    Used by both Edit (editing=True, name preserved) and Clone (editing=False,
+    name suffixed with '(copy)'). Schedules `_pf_load_*` keys that are flushed
+    to the widgets on the next rerun, so this function can be called from
+    inside a button callback without colliding with already-instantiated widgets.
+    """
+    # Drop any leftover weight-widget state so the editor reseeds from the
+    # incoming weights (otherwise old values would shadow the new portfolio).
+    for prev in st.session_state.get("builder_assets", []):
+        clear_weight_state(prev["ticker"])
+
+    st.session_state.builder_assets = _portfolio_to_builder_assets(portfolio)
+    st.session_state["_pf_load_name"] = new_name
+    st.session_state["_pf_load_currency"] = portfolio.base_currency.value
+    st.session_state["editing_portfolio"] = portfolio.name if editing else None
+    st.session_state.pop("pending_asset", None)
+
+
 def render() -> None:
     st.header("Portfolio Builder")
 
@@ -42,6 +77,11 @@ def render() -> None:
             2. Confirm the selection (you'll see a preview card) and click **Add to Portfolio**.
             3. Adjust weights in the weight editor — the sum must equal 100%.
             4. Give the portfolio a name, pick a base currency, and click **Save Portfolio**.
+
+            **Edit / Clone:** Use **Edit** on a saved portfolio to load it back into
+            the builder and overwrite it on save. Use **Clone** to start a new portfolio
+            from an existing one as a template — the copy is saved under a new name and
+            leaves the original untouched.
 
             **Weights:** Represent the target allocation at each rebalance. Actual weights
             drift between rebalance dates as asset prices change. Rebalancing frequency is
@@ -65,6 +105,28 @@ def render() -> None:
     if "builder_assets" not in st.session_state:
         st.session_state.builder_assets = []
 
+    # Apply any pending name/currency hydration from a previous Edit/Clone click
+    # *before* the corresponding widgets are instantiated below.
+    if "_pf_load_name" in st.session_state:
+        st.session_state["portfolio_name"] = st.session_state.pop("_pf_load_name")
+    if "_pf_load_currency" in st.session_state:
+        st.session_state["portfolio_currency"] = st.session_state.pop("_pf_load_currency")
+
+    editing_name = st.session_state.get("editing_portfolio")
+    if editing_name:
+        col_msg, col_cancel = st.columns([4, 1])
+        col_msg.info(
+            f"Editing **{editing_name}** — saving will overwrite it. "
+            f"Change the name to save as a new portfolio instead."
+        )
+        if col_cancel.button("Cancel edit", use_container_width=True):
+            for prev in st.session_state.get("builder_assets", []):
+                clear_weight_state(prev["ticker"])
+            st.session_state.builder_assets = []
+            st.session_state["editing_portfolio"] = None
+            st.session_state["_pf_load_name"] = ""
+            st.rerun()
+
     # --- Asset Search ---
     st.subheader("Add Assets")
     from portfolio_simulator.ui.components.provider_selector import PROVIDER_META
@@ -84,11 +146,15 @@ def render() -> None:
 
     pending = st.session_state.get("pending_asset")
     if pending is not None:
-        st.success(
+        msg = (
             f"Selected: **{pending.ticker}** — {pending.name}  \n"
             f"Type: `{pending.asset_type.value}` · Currency: `{pending.currency}`"
-            + (f" · TER: `{(pending.ter or 0) * 100:.2f}%`" if pending.ter else "")
         )
+        if pending.ter:
+            msg += f" · TER: `{(pending.ter or 0) * 100:.2f}%`"
+        if pending.first_trade_date is not None:
+            msg += f" · Data since: `{pending.first_trade_date.isoformat()}`"
+        st.success(msg)
         col_add, col_clear = st.columns([1, 1])
         with col_add:
             if st.button("Add to Portfolio", type="primary", use_container_width=True):
@@ -139,7 +205,8 @@ def render() -> None:
     name = st.text_input("Portfolio name", key="portfolio_name")
     currency = st.selectbox("Base currency", [c.value for c in Currency], key="portfolio_currency")
 
-    if st.button("Save Portfolio", type="primary"):
+    save_label = "Update Portfolio" if editing_name else "Save Portfolio"
+    if st.button(save_label, type="primary"):
         assets_data = st.session_state.builder_assets
         if not name:
             st.error("Please enter a portfolio name.")
@@ -169,9 +236,14 @@ def render() -> None:
                         allocations=allocations,
                         base_currency=currency,
                     )
+                    # If editing under a new name, drop the old record so the
+                    # rename doesn't leave behind a duplicate.
+                    if editing_name and editing_name != name:
+                        store.delete(editing_name, user_id)
                     store.save(portfolio, user_id)
                     st.success(f"Portfolio '{name}' saved!")
                     st.session_state.builder_assets = []
+                    st.session_state["editing_portfolio"] = None
                 except Exception as e:
                     st.error(f"Error saving portfolio: {e}")
 
@@ -182,10 +254,26 @@ def render() -> None:
     if not portfolios:
         st.info("No portfolios saved yet.")
     else:
+        existing_names = {p.name for p in portfolios}
         for p in portfolios:
             with st.expander(f"{p.name} ({p.base_currency.value})"):
                 for a in p.allocations:
                     st.text(f"  {a.asset.ticker} ({a.asset.name}): {a.weight:.1%}")
-                if st.button(f"Delete {p.name}", key=f"del_{p.name}"):
+
+                col_edit, col_clone, col_del = st.columns(3)
+                if col_edit.button("Edit", key=f"edit_{p.name}", use_container_width=True):
+                    _load_into_builder(p, new_name=p.name, editing=True)
+                    st.rerun()
+                if col_clone.button("Clone", key=f"clone_{p.name}", use_container_width=True):
+                    # Find the next free "(copy)" name so cloning twice doesn't collide.
+                    base = f"{p.name} (copy)"
+                    candidate = base
+                    n = 2
+                    while candidate in existing_names:
+                        candidate = f"{base} {n}"
+                        n += 1
+                    _load_into_builder(p, new_name=candidate, editing=False)
+                    st.rerun()
+                if col_del.button("Delete", key=f"del_{p.name}", use_container_width=True):
                     store.delete(p.name, user_id)
                     st.rerun()

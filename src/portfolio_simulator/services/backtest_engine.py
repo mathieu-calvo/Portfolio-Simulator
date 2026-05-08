@@ -14,10 +14,7 @@ from portfolio_simulator.analytics.costs import (
     ter_drag_daily,
     transaction_cost_impact,
 )
-from portfolio_simulator.domain.enums import (
-    InvestmentStrategy,
-    RebalanceStrategy,
-)
+from portfolio_simulator.domain.enums import RebalanceStrategy
 from portfolio_simulator.domain.portfolio import Portfolio
 from portfolio_simulator.domain.results import BacktestResult
 from portfolio_simulator.domain.simulation import SimulationConfig
@@ -95,12 +92,12 @@ class BacktestEngine:
         # Management fee daily
         mgmt_fee_daily = management_fee_daily(config.management_fee_pct)
 
-        # DCA: monthly contribution dates
-        dca_dates = set()
-        if (
-            config.investment_strategy == InvestmentStrategy.DCA
-            and config.recurring_investment > 0
-        ):
+        # Monthly cashflow dates. Apply whenever the user has set a non-zero
+        # monthly amount on top of the initial lump sum — regardless of
+        # `investment_strategy` (kept for backwards compatibility). Negative
+        # values represent monthly withdrawals.
+        dca_dates: set = set()
+        if config.recurring_investment != 0:
             monthly_dates = pd.date_range(
                 start=config.start_date, end=config.end_date, freq="BME"
             )
@@ -193,6 +190,7 @@ class BacktestEngine:
             total_invested=total_invested,
             total_fees_paid=total_fees,
             total_taxes_paid=total_taxes,
+            base_currency=portfolio.base_currency.value,
         )
 
     def run_comparison(

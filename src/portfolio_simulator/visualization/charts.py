@@ -23,6 +23,8 @@ def portfolio_evolution_chart(
     title: str = "Portfolio Value Over Time",
 ) -> go.Figure:
     """Line chart showing portfolio value evolution for one or more backtests."""
+    from portfolio_simulator.utils.currency import currency_symbol
+
     fig = go.Figure()
     for i, r in enumerate(results):
         fig.add_trace(
@@ -33,10 +35,14 @@ def portfolio_evolution_chart(
                 line=dict(color=get_color(i), width=2),
             )
         )
+    # Use a single tick prefix only when every result shares the same base
+    # currency — otherwise leave it blank so a € portfolio doesn't pick up "$".
+    ccys = {getattr(r, "base_currency", None) or "USD" for r in results}
+    prefix = currency_symbol(next(iter(ccys))) if len(ccys) == 1 else ""
     fig.update_layout(
         title=title,
         yaxis_title="Portfolio Value",
-        yaxis_tickprefix="$",
+        yaxis_tickprefix=prefix,
     )
     return fig
 
@@ -204,8 +210,11 @@ def efficient_frontier_chart(
 def monte_carlo_chart(
     mc_result: MonteCarloResult,
     title: str = "Monte Carlo Projection",
+    currency: str | None = None,
 ) -> go.Figure:
     """Fan chart showing Monte Carlo simulation percentile bands."""
+    from portfolio_simulator.utils.currency import currency_symbol
+
     fig = go.Figure()
 
     # P5-P95 band
@@ -266,7 +275,7 @@ def monte_carlo_chart(
     fig.update_layout(
         title=title,
         yaxis_title="Portfolio Value",
-        yaxis_tickprefix="$",
+        yaxis_tickprefix=currency_symbol(currency),
     )
     return fig
 
