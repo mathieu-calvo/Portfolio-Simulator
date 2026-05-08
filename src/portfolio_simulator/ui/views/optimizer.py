@@ -23,6 +23,68 @@ def _result_currency(bt_result) -> str:
     return getattr(bt_result, "base_currency", None) or "USD"
 
 
+_HORIZON_SLIDER_MAX = 40
+
+
+def _horizon_input() -> int:
+    """Render the MC projection horizon control: slider (1–40) + linked override box.
+
+    Both widgets write to a shared canonical key (`mc_years`). The slider greys
+    out when the override exceeds its max, so the value stays consistent without
+    silently truncating what the user typed.
+    """
+    canonical = int(st.session_state.get("mc_years", 10))
+    if canonical < 1:
+        canonical = 1
+
+    # Sync widget state from the canonical value before instantiating the
+    # widgets this rerun — a callback-driven flow needs both keys aligned so
+    # whichever widget the user touches next reads the right starting point.
+    st.session_state["mc_years_slider"] = min(canonical, _HORIZON_SLIDER_MAX)
+    st.session_state["mc_years_input"] = canonical
+
+    def _on_slider() -> None:
+        st.session_state["mc_years"] = int(st.session_state["mc_years_slider"])
+
+    def _on_input() -> None:
+        v = int(st.session_state["mc_years_input"])
+        st.session_state["mc_years"] = max(1, v)
+
+    over_slider = canonical > _HORIZON_SLIDER_MAX
+    col_s, col_n = st.columns([3, 1])
+    with col_s:
+        st.slider(
+            "Projection horizon (years)",
+            min_value=1,
+            max_value=_HORIZON_SLIDER_MAX,
+            step=1,
+            key="mc_years_slider",
+            on_change=_on_slider,
+            disabled=over_slider,
+            help=(
+                f"Drag for 1–{_HORIZON_SLIDER_MAX} years. Use the box on the right "
+                f"to enter a longer horizon."
+            ),
+        )
+    with col_n:
+        st.number_input(
+            "Override",
+            min_value=1,
+            step=1,
+            key="mc_years_input",
+            on_change=_on_input,
+            help="Type any number of years here; values above 40 grey out the slider.",
+        )
+
+    if over_slider:
+        st.caption(
+            f"Horizon set to **{canonical} years** via the override — "
+            f"slider is disabled until you bring it back to ≤ {_HORIZON_SLIDER_MAX}."
+        )
+
+    return int(st.session_state["mc_years"])
+
+
 def render() -> None:
     st.header("Portfolio Optimizer")
 
@@ -190,9 +252,10 @@ def render() -> None:
             f"Run a new backtest in the Backtest view to change the source portfolio."
         )
 
+        n_years = _horizon_input()
+
         col1, col2 = st.columns(2)
         with col1:
-            n_years = st.slider("Projection horizon (years)", 1, 30, 10, key="mc_years")
             start_value = st.number_input(
                 f"Start value ({sym.strip() or '$'})",
                 min_value=0.0,
@@ -203,13 +266,13 @@ def render() -> None:
             )
         with col2:
             n_scenarios = st.number_input("Number of scenarios", 1000, 50000, 5000, step=1000, key="mc_n")
-            monthly_contrib = st.number_input(
-                f"Monthly contribution / withdrawal ({sym.strip() or '$'})",
-                value=0,
-                step=100,
-                key="mc_contrib",
-                help="Positive = contribution, negative = withdrawal.",
-            )
+        monthly_contrib = st.number_input(
+            f"Monthly contribution / withdrawal ({sym.strip() or '$'})",
+            value=0,
+            step=100,
+            key="mc_contrib",
+            help="Positive = contribution, negative = withdrawal.",
+        )
 
         if st.button("Run Monte Carlo", type="primary"):
             with st.spinner(f"Running {n_scenarios} scenarios..."):
