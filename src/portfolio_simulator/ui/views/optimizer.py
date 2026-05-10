@@ -40,6 +40,7 @@ def _horizon_input() -> int:
     # Sync widget state from the canonical value before instantiating the
     # widgets this rerun — a callback-driven flow needs both keys aligned so
     # whichever widget the user touches next reads the right starting point.
+    st.session_state["mc_years"] = canonical
     st.session_state["mc_years_slider"] = min(canonical, _HORIZON_SLIDER_MAX)
     st.session_state["mc_years_input"] = canonical
 
