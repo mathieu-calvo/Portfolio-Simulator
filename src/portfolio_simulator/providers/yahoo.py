@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
+from functools import lru_cache
 
 import pandas as pd
 import yfinance as yf
@@ -14,25 +16,56 @@ from portfolio_simulator.providers.base import AssetInfo
 logger = logging.getLogger(__name__)
 
 
+def _epoch_to_date(value) -> date | None:
+    """Convert a Yahoo epoch field (seconds, milliseconds, or datetime) to a date."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    try:
+        v = int(value)
+    except (TypeError, ValueError):
+        return None
+    # Heuristic: values > ~10^12 are milliseconds, smaller are seconds.
+    if v > 10**12:
+        v //= 1000
+    try:
+        return datetime.fromtimestamp(v, tz=timezone.utc).date()
+    except (OSError, ValueError):
+        return None
+
+
 def _first_trade_from_quote(q: dict) -> date | None:
     """Best-effort extraction of an asset's first-trade date from a Yahoo quote dict.
 
     Yahoo's search payload exposes the inception either as
     `firstTradeDateMilliseconds` (newer) or `firstTradeDateEpochUtc` (seconds).
     """
-    raw_ms = q.get("firstTradeDateMilliseconds")
-    if raw_ms is not None:
-        try:
-            return datetime.fromtimestamp(int(raw_ms) / 1000, tz=timezone.utc).date()
-        except (TypeError, ValueError, OSError):
-            return None
-    raw_s = q.get("firstTradeDateEpochUtc")
-    if raw_s is not None:
-        try:
-            return datetime.fromtimestamp(int(raw_s), tz=timezone.utc).date()
-        except (TypeError, ValueError, OSError):
-            return None
+    for k in ("firstTradeDateMilliseconds", "firstTradeDateEpochUtc", "firstTradeDate"):
+        v = q.get(k)
+        d = _epoch_to_date(v)
+        if d is not None:
+            return d
     return None
+
+
+@lru_cache(maxsize=2048)
+def _fetch_first_trade_date(ticker: str) -> date | None:
+    """Fetch first-trade date for a single ticker via the chart endpoint.
+
+    Yahoo's search endpoint omits `firstTradeDate` for many quotes, so we fall
+    back to `Ticker.history_metadata` (a single lightweight chart call). Cached
+    to avoid refetching across reruns/searches.
+    """
+    try:
+        meta = yf.Ticker(ticker).history_metadata
+    except Exception:
+        return None
+    if not isinstance(meta, dict):
+        return None
+    return _epoch_to_date(meta.get("firstTradeDate"))
 
 # Map yfinance quoteType to our AssetType
 _QUOTE_TYPE_MAP = {
@@ -106,11 +139,33 @@ class YahooFinanceProvider:
                     first_trade_date=_first_trade_from_quote(q),
                 )
             )
-        return assets[:limit]
+        assets = assets[:limit]
+
+        # Yahoo's search payload usually omits the inception date; enrich any
+        # missing entries in parallel via the chart-metadata endpoint.
+        missing_idx = [i for i, a in enumerate(assets) if a.first_trade_date is None and a.ticker]
+        if missing_idx:
+            with ThreadPoolExecutor(max_workers=min(8, len(missing_idx))) as pool:
+                fetched = list(pool.map(_fetch_first_trade_date, [assets[i].ticker for i in missing_idx]))
+            for i, ftd in zip(missing_idx, fetched):
+                if ftd is not None:
+                    a = assets[i]
+                    assets[i] = AssetInfo(
+                        ticker=a.ticker,
+                        name=a.name,
+                        asset_type=a.asset_type,
+                        currency=a.currency,
+                        ter=a.ter,
+                        exchange=a.exchange,
+                        isin=a.isin,
+                        first_trade_date=ftd,
+                    )
+        return assets
 
     def get_asset_info(self, ticker: str) -> AssetInfo:
         info = yf.Ticker(ticker).info
         yf_type = info.get("quoteType", "EQUITY")
+        ftd = _first_trade_from_quote(info) or _fetch_first_trade_date(ticker)
         return AssetInfo(
             ticker=ticker,
             name=info.get("longName") or info.get("shortName", ticker),
@@ -119,7 +174,7 @@ class YahooFinanceProvider:
             ter=info.get("annualReportExpenseRatio"),
             exchange=info.get("exchange"),
             isin=info.get("isin"),
-            first_trade_date=_first_trade_from_quote(info),
+            first_trade_date=ftd,
         )
 
     def get_fx_rates(
