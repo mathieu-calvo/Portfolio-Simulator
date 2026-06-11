@@ -106,8 +106,18 @@ def render() -> None:
     st.subheader("Simulation Parameters")
     col1, col2 = st.columns(2)
     with col1:
-        start_date = st.date_input("Start date", value=date(2015, 1, 1), key="cmp_start")
-        end_date = st.date_input("End date", value=date.today() - timedelta(days=1), key="cmp_end")
+        start_date = st.date_input(
+            "Start date",
+            value=date(2015, 1, 1),
+            min_value=date(1900, 1, 1),
+            key="cmp_start",
+        )
+        end_date = st.date_input(
+            "End date",
+            value=date.today() - timedelta(days=1),
+            min_value=date(1900, 1, 1),
+            key="cmp_end",
+        )
         initial = st.number_input(
             f"Initial investment ({sym.strip() or '$'})",
             value=10000, min_value=0, step=1000, key="cmp_init",
