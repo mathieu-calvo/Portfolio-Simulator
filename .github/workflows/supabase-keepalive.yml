@@ -35,4 +35,4 @@ jobs:
           curl -fsS \
             -H "apikey: $SUPABASE_ANON_KEY" \
             -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
-            "$SUPABASE_URL/rest/v1/" -o /dev/null
+            "$SUPABASE_URL/rest/v1/portfolios?select=id&limit=1" -o /dev/null
