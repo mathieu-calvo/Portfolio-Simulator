@@ -2,9 +2,9 @@ name: Supabase keepalive
 
 on:
   schedule:
-    # Every Monday and Thursday at 09:00 UTC.
-    # Max gap is 4 days (Thu -> Mon), comfortably under Supabase's 7-day pause threshold.
-    - cron: "0 9 * * 1,4"
+    # Daily at 09:00 UTC. Daily (not Mon/Thu) so a single GitHub-skipped
+    # scheduled run leaves a ~2-day gap, well under Supabase's 7-day pause threshold.
+    - cron: "0 9 * * *"
   workflow_dispatch:
 
 jobs:
@@ -22,8 +22,10 @@ jobs:
           psql "$DATABASE_URL" -c "SELECT 1;"
 
       # Supabase's auto-pause detector watches the API surface (PostgREST etc.),
-      # not raw Postgres connections, so a psql ping alone is not enough.
-      - name: Ping Supabase REST API
+      # not raw Postgres connections, and a read-only GET does not count as
+      # activity (confirmed: project paused Jul 2026 despite green GET pings).
+      # A WRITE through PostgREST generates WAL activity the detector registers.
+      - name: Upsert heartbeat via Supabase REST (write = real activity)
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
@@ -32,7 +34,10 @@ jobs:
             echo "SUPABASE_URL or SUPABASE_ANON_KEY secret is not set" >&2
             exit 1
           fi
-          curl -fsS \
+          curl -fsS -X POST \
             -H "apikey: $SUPABASE_ANON_KEY" \
             -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
-            "$SUPABASE_URL/rest/v1/portfolios?select=id&limit=1" -o /dev/null
+            -H "Content-Type: application/json" \
+            -H "Prefer: resolution=merge-duplicates,return=minimal" \
+            "$SUPABASE_URL/rest/v1/keepalive_heartbeat" \
+            -d "{\"id\":1,\"pinged_at\":\"$(date -u +%FT%TZ)\"}"
