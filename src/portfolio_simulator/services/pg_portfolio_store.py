@@ -29,6 +29,24 @@ _CREATE_INDEX = """
 CREATE INDEX IF NOT EXISTS idx_portfolios_user ON portfolios(user_id)
 """
 
+# Keep portfolios off Supabase's public Data API (PostgREST/GraphQL): RLS with
+# no policies denies the API roles, and the revokes remove their grants too.
+# The app connects as the table owner, which RLS does not apply to.
+# The role check keeps this working on plain Postgres, which has no API roles.
+_LOCK_DOWN = """
+ALTER TABLE portfolios ENABLE ROW LEVEL SECURITY;
+DO $$
+DECLARE r TEXT;
+BEGIN
+    FOREACH r IN ARRAY ARRAY['anon', 'authenticated'] LOOP
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
+            EXECUTE format('REVOKE ALL ON TABLE portfolios FROM %I', r);
+            EXECUTE format('REVOKE ALL ON SEQUENCE portfolios_id_seq FROM %I', r);
+        END IF;
+    END LOOP;
+END $$;
+"""
+
 
 class PgPortfolioStore:
     """Save and load portfolios from PostgreSQL with per-user isolation."""
@@ -56,6 +74,7 @@ class PgPortfolioStore:
         with self._conn.cursor() as cur:
             cur.execute(_CREATE_TABLE)
             cur.execute(_CREATE_INDEX)
+            cur.execute(_LOCK_DOWN)
         self._conn.commit()
 
     def save(self, portfolio: Portfolio, user_id: str = "local") -> None:

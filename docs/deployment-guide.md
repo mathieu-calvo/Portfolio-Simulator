@@ -63,9 +63,16 @@ CREATE TABLE IF NOT EXISTS portfolios (
 );
 
 CREATE INDEX IF NOT EXISTS idx_portfolios_user ON portfolios(user_id);
+
+-- Keep portfolios off the public Data API (the app connects directly instead).
+ALTER TABLE portfolios ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE portfolios FROM anon, authenticated;
+REVOKE ALL ON SEQUENCE portfolios_id_seq FROM anon, authenticated;
 ```
 
 You should see "Success. No rows returned." — that means the table was created.
+
+The app also re-applies the lockdown every time it starts. See [supabase-security.md](supabase-security.md) for the full Data API lockdown.
 
 ---
 
@@ -165,6 +172,53 @@ url = "postgresql://postgres:YOUR_PASSWORD@db.abcdefgh.supabase.co:5432/postgres
 4. Log in with the username (e.g. `mathieu`) and the **plaintext password** (not the hash)
 5. Create and save a portfolio — it's now stored in Supabase
 6. To verify isolation: log out, log in as a different user — they should see no portfolios
+
+---
+
+## Step 8: Set up the Supabase keepalive
+
+Supabase pauses free-tier projects after 7 days without activity. The `Supabase keepalive` GitHub Actions workflow (`.github/workflows/supabase-keepalive.yml`) prevents this by upserting a heartbeat row through the Supabase REST API every day. Only API writes count as activity; plain Postgres connections and read-only requests do not.
+
+### 8a: Create the heartbeat table
+
+In the Supabase **SQL Editor**, run:
+
+```sql
+CREATE TABLE IF NOT EXISTS public.keepalive_heartbeat (
+    id INT PRIMARY KEY,
+    pinged_at TIMESTAMPTZ NOT NULL
+);
+
+-- Since Oct 30, 2026, Supabase no longer grants Data API access to new
+-- tables in "public" automatically. Without this grant the workflow fails
+-- with "permission denied".
+GRANT SELECT, INSERT, UPDATE ON public.keepalive_heartbeat TO anon;
+
+-- Limit the anon key to the single heartbeat row.
+ALTER TABLE public.keepalive_heartbeat ENABLE ROW LEVEL SECURITY;
+CREATE POLICY keepalive_anon ON public.keepalive_heartbeat
+    FOR ALL TO anon
+    USING (id = 1)
+    WITH CHECK (id = 1);
+```
+
+> The upsert needs `SELECT` as well as `INSERT` and `UPDATE`, because PostgREST runs `INSERT ... ON CONFLICT DO UPDATE`, which has to read the existing row.
+
+This is the only table that should be reachable with the `anon` key. The `portfolios` table from Step 3 must have **no** API grants: the app connects to Postgres directly as the table owner and never goes through the Data API. See [supabase-security.md](supabase-security.md).
+
+### 8b: Add the GitHub secrets
+
+In GitHub, open the repo → **Settings** → **Secrets and variables** → **Actions**, and add:
+
+| Secret | Value |
+|---|---|
+| `DATABASE_URL` | The Session pooler connection string from Step 4 |
+| `SUPABASE_URL` | Supabase **Project Settings** → **API** → Project URL (e.g. `https://abcdefgh.supabase.co`) |
+| `SUPABASE_ANON_KEY` | Supabase **Project Settings** → **API** → `anon` public key |
+
+### 8c: Verify
+
+In GitHub, open **Actions** → **Supabase keepalive** → **Run workflow**. Both steps should pass. In the Supabase **Table Editor**, `keepalive_heartbeat` should hold one row with `id = 1` and a recent `pinged_at`.
 
 ---
 
